@@ -52,13 +52,15 @@ public struct SystemSample: Codable, Equatable, Sendable {
     }
 }
 
-/// Average and peak of one metric over a capture.
+/// Lowest, average and peak value of one metric over a capture.
 public struct MetricRange: Equatable, Sendable {
+    public var minimum: Double
     public var average: Double
     public var maximum: Double
 
     public init?(_ values: [Double]) {
-        guard let maximum = values.max() else { return nil }
+        guard let minimum = values.min(), let maximum = values.max() else { return nil }
+        self.minimum = minimum
         self.maximum = maximum
         average = values.reduce(0, +) / Double(values.count)
     }

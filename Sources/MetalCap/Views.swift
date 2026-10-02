@@ -411,6 +411,10 @@ struct CaptureDetailView: View {
                         Text(tr("Czas klatki", "Frame time")).font(.headline)
                         FrameTimeChart(points: FrameTimeChart.points(for: capture.frameTimes))
                             .frame(minHeight: 240, maxHeight: .infinity)
+                        // The average matches AVG: total time over frame count.
+                        if let range = MetricRange(capture.frameTimes.filter { $0 > 0 }) {
+                            RangeSummary(range: range) { String(format: "%.2f ms", $0) }
+                        }
                     }
                     if let system = capture.system, !system.isEmpty {
                         SystemSectionView(samples: system, duration: metrics.duration, averageFPS: metrics.average)
@@ -692,13 +696,13 @@ struct SystemSectionView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 20), GridItem(.flexible())], alignment: .leading, spacing: 16) {
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 20, alignment: .top), GridItem(.flexible(), alignment: .top)],
+                      alignment: .leading, spacing: 16) {
                 ForEach(charts.indices, id: \.self) { index in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(charts[index].title).font(.subheadline).foregroundStyle(.secondary)
                         TimeSeriesChart(series: charts[index].series, duration: duration,
                                         range: charts[index].range, format: charts[index].format)
-                            .frame(height: 150)
                     }
                 }
             }
@@ -724,7 +728,28 @@ struct InfoTile: View {
     }
 }
 
-/// One or two metrics over the capture, with a readout under the pointer.
+/// "min · avg · max" for one series, optionally led by the series' colour and name.
+struct RangeSummary: View {
+    var color: Color?
+    var name: String?
+    let range: MetricRange
+    let format: (Double) -> String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let color { Circle().fill(color).frame(width: 8, height: 8) }
+            if let name { Text(name) }
+            Text("min \(format(range.minimum)) · \(tr("śr.", "avg")) \(format(range.average)) · \(tr("maks.", "max")) \(format(range.maximum))")
+                .monospacedDigit()
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+    }
+}
+
+/// One or more metrics over the capture, with a readout under the pointer and
+/// each series' lowest, average and highest value underneath.
 struct TimeSeriesChart: View {
     struct Point {
         let time: Double
@@ -767,6 +792,19 @@ struct TimeSeriesChart: View {
     }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            chart.frame(height: 150)
+            // These rows double as the legend.
+            ForEach(Array(series.enumerated()), id: \.offset) { index, series in
+                if let range = MetricRange(series.points.map(\.value)) {
+                    RangeSummary(color: self.series.count > 1 ? Self.seriesColors[index % Self.seriesColors.count] : nil,
+                                 name: self.series.count > 1 ? series.id : nil, range: range, format: format)
+                }
+            }
+        }
+    }
+
+    private var chart: some View {
         Chart {
             ForEach(series) { series in
                 ForEach(series.points.indices, id: \.self) { index in
@@ -795,7 +833,7 @@ struct TimeSeriesChart: View {
             }
         }
         .chartForegroundStyleScale(domain: series.map(\.id), range: Self.seriesColors)
-        .chartLegend(series.count > 1 ? .visible : .hidden)
+        .chartLegend(.hidden)
         .chartXScale(domain: 0...max(duration, 1))
         .chartYScale(domain: range ?? fittedRange)
         .chartOverlay { proxy in

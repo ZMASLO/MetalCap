@@ -306,6 +306,7 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         #expect(samples.range(of: \.gpuUtilization) == MetricRange([40, 80]))
         #expect(samples.range(of: \.gpuUtilization)?.average == 60)
         #expect(samples.range(of: \.gpuUtilization)?.maximum == 80)
+        #expect(samples.range(of: \.gpuUtilization)?.minimum == 40)
         #expect(samples.range(of: \.cpuTemperature) == nil)
         #expect(samples.worstThermalState == 2)
     }
