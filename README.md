@@ -1,5 +1,7 @@
 # MetalCap
 
+<img src="Resources/AppIcon.png" width="128" alt="Ikona MetalCap">
+
 Companion do benchmarków gier na macOS — odpowiednik CapFrameX. Przechwytuje czasy klatek z Metal Performance HUD i liczy AVG, P1 oraz 1% Low tak samo jak CapFrameX.
 
 ## Budowanie
@@ -11,6 +13,15 @@ swift test              # testy rdzenia
 Scripts/make-app.sh     # buduje build/MetalCap.app
 open build/MetalCap.app
 ```
+
+Ikonę generuje `swift Scripts/make-icon.swift` (zapisuje `Resources/AppIcon.icns`); wersję paczki ustawia zmienna `VERSION`, np. `VERSION=0.2.0 Scripts/make-app.sh`.
+
+### CI i wydania
+
+- **CI** (`.github/workflows/ci.yml`): przy każdym pushu do `main` i pull requeście buduje projekt, uruchamia testy, składa `MetalCap.app` i dołącza ją jako artefakt.
+- **Wydanie** (`.github/workflows/release.yml`): push tagu `v*` (np. `git tag v0.2.0 && git push origin v0.2.0`) uruchamia testy, buduje aplikację z tą wersją i publikuje wydanie GitHub z plikiem `MetalCap-<wersja>.zip`.
+
+Aplikacja jest podpisana ad hoc i nienotaryzowana, więc po pobraniu macOS zablokuje pierwsze uruchomienie; trzeba ją otworzyć z menu kontekstowego („Otwórz”) albo zezwolić w Ustawieniach systemowych → Prywatność i ochrona.
 
 ## Użycie
 

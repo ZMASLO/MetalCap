@@ -1,7 +1,11 @@
 #!/bin/sh
 # Builds a release binary and wraps it in build/MetalCap.app (ad-hoc signed).
+# VERSION and BUILD_NUMBER set the bundle's version (defaults: 0.1.0 and 1).
 set -e
 cd "$(dirname "$0")/.."
+
+VERSION="${VERSION:-0.1.0}"
+BUILD_NUMBER="${BUILD_NUMBER:-1}"
 
 swift build -c release
 
@@ -11,14 +15,17 @@ mkdir -p "$APP/Contents/MacOS"
 # Empty localization folders make AppKit show its own menus and panels in these languages.
 mkdir -p "$APP/Contents/Resources/en.lproj" "$APP/Contents/Resources/pl.lproj"
 cp .build/release/MetalCap "$APP/Contents/MacOS/MetalCap"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
-cat > "$APP/Contents/Info.plist" <<'EOF'
+cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>CFBundleExecutable</key>
 	<string>MetalCap</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.metalcap.MetalCap</string>
 	<key>CFBundleDevelopmentRegion</key>
@@ -33,9 +40,9 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>$VERSION</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$BUILD_NUMBER</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
@@ -45,4 +52,4 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 EOF
 
 codesign --force --sign - "$APP"
-echo "Built $APP"
+echo "Built $APP ($VERSION)"

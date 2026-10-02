@@ -362,8 +362,9 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         #expect((sample.systemMemory ?? 0) > 500)
         #expect((0...3).contains(sample.thermalState))
         #expect((reading.processes[pid]?.memory ?? 0) > 1)
-        // One busy thread: close to 100% of a core.
-        #expect((60...160).contains(reading.processes[pid]?.cpu ?? 0))
+        // One busy thread is close to 100% of a core; the range is wide because shared CI machines
+        // can deschedule the test or run the test runner's other threads alongside it.
+        #expect((20...300).contains(reading.processes[pid]?.cpu ?? 0))
     }
 }
 

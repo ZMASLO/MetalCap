@@ -1,0 +1,30 @@
+name: Release
+
+# Pushing a tag such as v0.2.0 builds the app and publishes it as a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test
+        run: swift test
+
+      - name: Build the app bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}" BUILD_NUMBER="$GITHUB_RUN_NUMBER" Scripts/make-app.sh
+          ditto -c -k --keepParent build/MetalCap.app "build/MetalCap-${GITHUB_REF_NAME#v}.zip"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "build/MetalCap-${GITHUB_REF_NAME#v}.zip" \
+            --title "MetalCap ${GITHUB_REF_NAME#v}" --generate-notes
