@@ -143,6 +143,15 @@ struct CaptureDetailView: View {
                         MetricTile(title: "Min", value: metrics.min)
                     }
                     VStack(alignment: .leading, spacing: 8) {
+                        Text("FPS").font(.headline)
+                        MetricBarChart(items: [
+                            .init(id: "AVG", value: metrics.average),
+                            .init(id: "P1", value: metrics.p1),
+                            .init(id: "1% Low",
+                                  value: lowVariant == .average ? metrics.onePercentLowAverage : metrics.onePercentLowIntegral),
+                        ])
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
                         Text("Czas klatki").font(.headline)
                         FrameTimeChart(points: FrameTimeChart.points(for: capture.frameTimes))
                             .frame(minHeight: 240, maxHeight: .infinity)
@@ -199,6 +208,32 @@ struct MetricTile: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// Horizontal bars comparing the headline metrics, as on CapFrameX's analysis page.
+struct MetricBarChart: View {
+    struct Item: Identifiable {
+        let id: String
+        let value: Double
+    }
+
+    let items: [Item]
+
+    var body: some View {
+        Chart(items) { item in
+            BarMark(x: .value("FPS", item.value), y: .value("Metryka", item.id), height: .fixed(18))
+                .clipShape(UnevenRoundedRectangle(bottomTrailingRadius: 4, topTrailingRadius: 4))
+                .annotation(position: .trailing, spacing: 6) {
+                    Text(fps(item.value)).font(.callout.weight(.medium)).monospacedDigit()
+                }
+        }
+        // Headroom so the value label of the longest bar is not clipped.
+        .chartXScale(domain: 0...((items.map(\.value).filter(\.isFinite).max() ?? 1) * 1.12))
+        .chartYAxis {
+            AxisMarks(preset: .extended, position: .leading) { _ in AxisValueLabel(centered: true) }
+        }
+        .frame(height: CGFloat(items.count) * 32 + 24)
     }
 }
 
