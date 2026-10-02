@@ -9,12 +9,17 @@ if let runIndex = arguments.firstIndex(of: "--run"), runIndex + 1 < arguments.co
         .flatMap { $0 + 1 < arguments.count ? Double(arguments[$0 + 1]) : nil } ?? 10
     let source = LaunchedProcessSource(url: URL(fileURLWithPath: arguments[runIndex + 1]))
     let recorder = CaptureRecorder()
+    let sampler = SystemSampler()
     source.onEvent = { event in DispatchQueue.main.async { recorder.ingest(event) } }
     do { try source.start() } catch {
         FileHandle.standardError.write(Data("MetalCap: \(error.localizedDescription)\n".utf8))
         exit(1)
     }
     recorder.start(at: Date(), preferredPID: source.pid)
+    let samplingTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+        recorder.ingest(sampler.read(pids: recorder.candidatePIDs))
+    }
+    samplingTimer.fire()
     DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
         recorder.stop(at: Date())
         // Give the HUD time to log the line covering the last frames.
@@ -31,10 +36,24 @@ if let runIndex = arguments.firstIndex(of: "--run"), runIndex + 1 < arguments.co
                          metrics.average, metrics.p1, metrics.onePercentLowAverage,
                          metrics.onePercentLowIntegral, metrics.pointOnePercentLowAverage,
                          metrics.min, metrics.max))
+            if let system = capture.system {
+                func describe(_ label: String, _ metric: KeyPath<SystemSample, Double?>, _ format: String) -> String {
+                    guard let range = system.range(of: metric) else { return "\(label) n/a" }
+                    return String(format: "\(label) avg \(format) max \(format)", range.average, range.maximum)
+                }
+                print("System (\(system.count) samples): " + [
+                    describe("GPU", \.gpuUtilization, "%.0f%%"), describe("GPU mem", \.gpuMemory, "%.0f MB"),
+                    describe("CPU temp", \.cpuTemperature, "%.0f°C"), describe("GPU temp", \.gpuTemperature, "%.0f°C"),
+                ].joined(separator: " | "))
+                print("                     " + [
+                    describe("CPU all", \.cpuUsage, "%.0f%%"), describe("game CPU", \.processCPU, "%.0f%%"),
+                    describe("game RAM", \.processMemory, "%.0f MB"), describe("system RAM", \.systemMemory, "%.0f MB"),
+                ].joined(separator: " | ") + " | thermal state \(system.worstThermalState)")
+            }
             exit(0)
         }
     }
-    dispatchMain()
+    RunLoop.main.run()
 } else {
     MetalCapApp.main()
 }

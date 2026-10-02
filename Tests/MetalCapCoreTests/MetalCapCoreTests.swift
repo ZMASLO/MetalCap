@@ -295,3 +295,66 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         #expect(captures.sorted(by: .name, ascending: false).map(\.startedAt.timeIntervalSince1970) == [3, 1, 4, 2])
     }
 }
+
+@Suite struct SystemTests {
+    @Test func rangesIgnoreMissingValues() {
+        let samples = [
+            SystemSample(time: 0, gpuUtilization: 40, thermalState: 0),
+            SystemSample(time: 1, gpuUtilization: nil, thermalState: 2),
+            SystemSample(time: 2, gpuUtilization: 80, thermalState: 1),
+        ]
+        #expect(samples.range(of: \.gpuUtilization) == MetricRange([40, 80]))
+        #expect(samples.range(of: \.gpuUtilization)?.average == 60)
+        #expect(samples.range(of: \.gpuUtilization)?.maximum == 80)
+        #expect(samples.range(of: \.cpuTemperature) == nil)
+        #expect(samples.worstThermalState == 2)
+    }
+
+    @Test func recorderAttachesTheChosenProcessToSamples() {
+        let t0 = Date(timeIntervalSinceReferenceDate: 1000)
+        func reading(at seconds: Double, memory: [Int32: Double]) -> SystemReading {
+            SystemReading(date: t0.addingTimeInterval(seconds), sample: SystemSample(time: 0, gpuUtilization: 50),
+                          processes: memory.mapValues { .init(cpu: 120, memory: $0) })
+        }
+        let frames = Array(repeating: Frame(interval: 100, gpuTime: 1), count: 10)
+        let recorder = CaptureRecorder()
+        recorder.ingest(reading(at: 0, memory: [7: 1]))             // not recording yet
+        recorder.start(at: t0, preferredPID: 7)
+        #expect(recorder.candidatePIDs == [7])
+        recorder.ingest(HUDEvent(time: t0.addingTimeInterval(1), pid: 7, processName: "game",
+                                 sample: HUDSample(frameNumber: 10, frames: frames, isRedacted: false)))
+        recorder.ingest(reading(at: 0.5, memory: [7: 2048, 9: 10]))
+        recorder.ingest(reading(at: 1.5, memory: [9: 10]))          // the game was not sampled this time
+        recorder.stop(at: t0.addingTimeInterval(2))
+        recorder.ingest(reading(at: 2.5, memory: [7: 4096]))        // after stop
+        let system = recorder.finish()?.system
+        #expect(system?.map(\.time) == [0.5, 1.5])
+        #expect(system?.map(\.processMemory) == [2048, nil])
+        #expect(system?.first?.processCPU == 120)
+        #expect(system?.first?.gpuUtilization == 50)
+    }
+
+    /// Reads the real machine: checks that every value that is reported is plausible.
+    @Test func samplerReportsPlausibleValues() {
+        let sampler = SystemSampler()
+        let pid = ProcessInfo.processInfo.processIdentifier
+        _ = sampler.read(pids: [pid])
+        let end = Date().addingTimeInterval(0.4)
+        var spin = 0.0
+        while Date() < end { spin += 1 }                             // keep one core busy
+        let reading = sampler.read(pids: [pid])
+        let sample = reading.sample
+        print("sampler:", sample, reading.processes[pid] as Any, "battery:", SystemSampler.isOnBattery as Any)
+
+        if let value = sample.gpuUtilization { #expect((0...100).contains(value)) }
+        if let value = sample.gpuMemory { #expect(value >= 0) }
+        if let value = sample.cpuTemperature { #expect((10...130).contains(value)) }
+        if let value = sample.gpuTemperature { #expect((10...130).contains(value)) }
+        if let value = sample.cpuUsage { #expect((0...100).contains(value)) }
+        #expect((sample.systemMemory ?? 0) > 500)
+        #expect((0...3).contains(sample.thermalState))
+        #expect((reading.processes[pid]?.memory ?? 0) > 1)
+        // One busy thread: close to 100% of a core.
+        #expect((60...160).contains(reading.processes[pid]?.cpu ?? 0))
+    }
+}

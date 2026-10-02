@@ -19,6 +19,11 @@ public struct Capture: Codable, Identifiable, Equatable, Sendable {
     public var missingFrames: Int?
     /// The user's note, e.g. the graphics settings used for this run.
     public var comment: String?
+    /// GPU load, temperatures, CPU and memory use sampled about once per second during the capture.
+    public var system: [SystemSample]?
+    /// Whether the Mac ran on battery when the capture started.
+    public var onBattery: Bool?
+    public var lowPowerMode: Bool?
 
     public init(id: UUID = UUID(), processName: String, startedAt: Date,
                 frameTimes: [Double], gpuTimes: [Double],
@@ -84,6 +89,7 @@ public final class CaptureRecorder {
     private var preferredPID: Int32?
     private var processes: [Int32: ProcessFrames] = [:]
     private var lastFrameNumber: [Int32: Int] = [:]
+    private var readings: [SystemReading] = []
 
     public init() {}
 
@@ -94,6 +100,17 @@ public final class CaptureRecorder {
         stopTime = .distantFuture
         self.preferredPID = preferredPID
         processes = [:]
+        readings = []
+    }
+
+    /// Processes whose resource use is worth sampling: any of them may turn out to be the game.
+    public var candidatePIDs: [Int32] {
+        Array(Set(processes.keys).union(preferredPID.map { [$0] } ?? []))
+    }
+
+    public func ingest(_ reading: SystemReading) {
+        guard isRecording, reading.date >= startTime, reading.date <= stopTime else { return }
+        readings.append(reading)
     }
 
     /// Marks the end of the capture. Lines covering the last moments may still be
@@ -134,12 +151,23 @@ public final class CaptureRecorder {
         defer { processes = [:] }
 
         let withFrames = processes.filter { !$0.value.frameTimes.isEmpty }
-        let chosen = preferredPID.flatMap { withFrames[$0] }
-            ?? withFrames.values.max { $0.frameTimes.count < $1.frameTimes.count }
-        guard let chosen else { return nil }
-        return Capture(processName: chosen.name, startedAt: startTime,
-                       frameTimes: chosen.frameTimes, gpuTimes: chosen.gpuTimes,
-                       wallDuration: stopTime == .distantFuture ? nil : stopTime.timeIntervalSince(startTime),
-                       missingFrames: chosen.missingFrames)
+        let pid = preferredPID.flatMap { withFrames[$0] == nil ? nil : $0 }
+            ?? withFrames.max { $0.value.frameTimes.count < $1.value.frameTimes.count }?.key
+        guard let pid, let chosen = withFrames[pid] else { return nil }
+        var capture = Capture(processName: chosen.name, startedAt: startTime,
+                              frameTimes: chosen.frameTimes, gpuTimes: chosen.gpuTimes,
+                              wallDuration: stopTime == .distantFuture ? nil : stopTime.timeIntervalSince(startTime),
+                              missingFrames: chosen.missingFrames)
+        if !readings.isEmpty {
+            capture.system = readings.map { reading in
+                var sample = reading.sample
+                sample.time = reading.date.timeIntervalSince(startTime)
+                sample.processCPU = reading.processes[pid]?.cpu
+                sample.processMemory = reading.processes[pid]?.memory
+                return sample
+            }
+        }
+        readings = []
+        return capture
     }
 }
