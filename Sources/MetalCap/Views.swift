@@ -412,6 +412,9 @@ struct CaptureDetailView: View {
                         FrameTimeChart(points: FrameTimeChart.points(for: capture.frameTimes))
                             .frame(minHeight: 240, maxHeight: .infinity)
                     }
+                    if let system = capture.system, !system.isEmpty {
+                        SystemSectionView(samples: system, duration: metrics.duration)
+                    }
                 }
                 .padding(20)
                 .frame(minHeight: geometry.size.height, alignment: .top)
@@ -420,6 +423,25 @@ struct CaptureDetailView: View {
         } else {
             ContentUnavailableView(tr("Przechwycenie nie zawiera klatek", "The capture contains no frames"), systemImage: "exclamationmark.triangle")
         }
+    }
+
+    /// Conditions that make the result less comparable: gaps in the log, heat, power saving.
+    private var notes: [String] {
+        var notes = warning.map { [$0] } ?? []
+        switch capture.system?.worstThermalState ?? 0 {
+        case 1: notes.append(tr("Mac się nagrzewał w trakcie pomiaru (stan termiczny: podwyższony).",
+                                "The Mac was warming up during the capture (thermal state: fair)."))
+        case 2...: notes.append(tr("Mac ograniczał wydajność z powodu temperatury w trakcie pomiaru.",
+                                   "The Mac was throttling because of heat during the capture."))
+        default: break
+        }
+        if capture.onBattery == true {
+            notes.append(tr("Pomiar na zasilaniu z baterii.", "Captured on battery power."))
+        }
+        if capture.lowPowerMode == true {
+            notes.append(tr("Pomiar w trybie niskiego zużycia energii.", "Captured in Low Power Mode."))
+        }
+        return notes
     }
 
     /// Says when the log did not deliver every frame of the capture window.
@@ -452,8 +474,8 @@ struct CaptureDetailView: View {
             }
             Text("\(formatted(capture.startedAt, date: .long, time: .standard)) · \(String(format: "%.1f", metrics.duration)) s · \(tr("klatki", "frames")): \(metrics.frameCount)")
                 .foregroundStyle(.secondary)
-            if let warning {
-                Label(warning, systemImage: "exclamationmark.triangle")
+            ForEach(notes, id: \.self) { note in
+                Label(note, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
             }
             CommentField(capture: capture)
@@ -553,6 +575,185 @@ struct MetricTile: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// GPU load, temperatures, CPU and memory use recorded alongside the frames.
+struct SystemSectionView: View {
+    let samples: [SystemSample]
+    let duration: Double
+
+    private static func megabytes(_ value: Double) -> String {
+        value >= 1024 ? String(format: "%.1f GB", value / 1024) : String(format: "%.0f MB", value)
+    }
+
+    /// A value axis from zero to a little above the highest point.
+    private static func fromZero(_ series: [TimeSeriesChart.Series]) -> ClosedRange<Double> {
+        0...((series.flatMap { $0.points.map(\.value) }.max() ?? 1) * 1.15)
+    }
+
+    private static func percent(_ value: Double) -> String { String(format: "%.0f%%", value) }
+    private static func degrees(_ value: Double) -> String { String(format: "%.0f°C", value) }
+
+    private func series(_ name: String, _ metric: KeyPath<SystemSample, Double?>) -> TimeSeriesChart.Series? {
+        let points = samples.compactMap { sample in
+            sample[keyPath: metric].map { TimeSeriesChart.Point(time: sample.time, value: $0) }
+        }
+        return points.isEmpty ? nil : TimeSeriesChart.Series(id: name, points: points)
+    }
+
+    private var thermalStateName: String {
+        switch samples.worstThermalState {
+        case 0: tr("Nominalny", "Nominal")
+        case 1: tr("Podwyższony", "Fair")
+        case 2: tr("Poważny", "Serious")
+        default: tr("Krytyczny", "Critical")
+        }
+    }
+
+    private func tile(_ title: String, _ metric: KeyPath<SystemSample, Double?>,
+                      format: (Double) -> String, peakOnly: Bool = false) -> InfoTile? {
+        guard let range = samples.range(of: metric) else { return nil }
+        return InfoTile(title: title,
+                        value: format(peakOnly ? range.maximum : range.average),
+                        detail: peakOnly ? tr("maksimum", "peak") : "\(tr("maks.", "max")) \(format(range.maximum))")
+    }
+
+    var body: some View {
+        let tiles = [
+            tile(tr("Obciążenie GPU", "GPU load"), \.gpuUtilization, format: Self.percent),
+            tile(tr("Temperatura CPU", "CPU temperature"), \.cpuTemperature, format: Self.degrees, peakOnly: true),
+            tile(tr("Temperatura GPU", "GPU temperature"), \.gpuTemperature, format: Self.degrees, peakOnly: true),
+            tile(tr("RAM gry", "Game RAM"), \.processMemory, format: Self.megabytes, peakOnly: true),
+            tile(tr("CPU gry", "Game CPU"), \.processCPU, format: Self.percent),
+            InfoTile(title: tr("Stan termiczny", "Thermal state"), value: thermalStateName,
+                     detail: tr("najgorszy", "worst")),
+        ].compactMap { $0 }
+        let memory = [series(tr("Gra", "Game"), \.processMemory), series("GPU", \.gpuMemory)].compactMap { $0 }
+        let gameCPU = [series("CPU", \.processCPU)].compactMap { $0 }
+        // A nil range lets the chart fit the data; temperatures read better without a zero baseline.
+        let charts: [(title: String, series: [TimeSeriesChart.Series], range: ClosedRange<Double>?, format: (Double) -> String)] = [
+            (tr("Obciążenie GPU (%)", "GPU load (%)"), [series("GPU", \.gpuUtilization)].compactMap { $0 }, 0...100, Self.percent),
+            (tr("Temperatura (°C)", "Temperature (°C)"),
+             [series("CPU", \.cpuTemperature), series("GPU", \.gpuTemperature)].compactMap { $0 }, nil, Self.degrees),
+            (tr("Pamięć (MB)", "Memory (MB)"), memory, Self.fromZero(memory), Self.megabytes),
+            (tr("CPU gry (% jednego rdzenia)", "Game CPU (% of one core)"), gameCPU, Self.fromZero(gameCPU), Self.percent),
+        ].filter { !$0.series.isEmpty }
+
+        VStack(alignment: .leading, spacing: 12) {
+            Text("System").font(.headline)
+            HStack(spacing: 12) {
+                ForEach(tiles.indices, id: \.self) { tiles[$0] }
+            }
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 20), GridItem(.flexible())], alignment: .leading, spacing: 16) {
+                ForEach(charts.indices, id: \.self) { index in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(charts[index].title).font(.subheadline).foregroundStyle(.secondary)
+                        TimeSeriesChart(series: charts[index].series, duration: duration,
+                                        range: charts[index].range, format: charts[index].format)
+                            .frame(height: 150)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A tile for a value that is not a frame rate.
+struct InfoTile: View {
+    let title: String
+    let value: String
+    let detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Text(value).font(.title3.weight(.medium)).monospacedDigit().lineLimit(1)
+            Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// One or two metrics over the capture, with a readout under the pointer.
+struct TimeSeriesChart: View {
+    struct Point {
+        let time: Double
+        let value: Double
+    }
+
+    struct Series: Identifiable {
+        let id: String
+        let points: [Point]
+    }
+
+    let series: [Series]
+    /// Length of the capture in seconds; the time axis spans it so all charts line up.
+    let duration: Double
+    /// Fixed value axis, or nil to fit the data.
+    let range: ClosedRange<Double>?
+    let format: (Double) -> String
+    @ViewState private var hoverTime: Double?
+
+    private var fittedRange: ClosedRange<Double> {
+        let values = series.flatMap { $0.points.map(\.value) }
+        guard let low = values.min(), let high = values.max() else { return 0...1 }
+        let margin = Swift.max((high - low) * 0.15, high * 0.02, 1)
+        return Swift.max(0, low - margin)...(high + margin)
+    }
+
+    private func value(of series: Series, at time: Double) -> Double? {
+        series.points.min { abs($0.time - time) < abs($1.time - time) }?.value
+    }
+
+    var body: some View {
+        Chart {
+            ForEach(series) { series in
+                ForEach(series.points.indices, id: \.self) { index in
+                    LineMark(x: .value("Time", series.points[index].time),
+                             y: .value("Value", series.points[index].value),
+                             series: .value("Series", series.id))
+                        .foregroundStyle(by: .value("Series", series.id))
+                        .lineStyle(StrokeStyle(lineWidth: 2))
+                }
+            }
+            if let hoverTime {
+                RuleMark(x: .value("Time", hoverTime))
+                    .foregroundStyle(.secondary.opacity(0.5))
+                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                        Text(series.compactMap { series in
+                            value(of: series, at: hoverTime).map { value in
+                                self.series.count > 1 ? "\(series.id) \(format(value))" : format(value)
+                            }
+                        }.joined(separator: " · "))
+                            .font(.caption)
+                            .monospacedDigit()
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(.background, in: RoundedRectangle(cornerRadius: 4))
+                    }
+            }
+        }
+        .chartForegroundStyleScale(domain: series.map(\.id), range: [Color.blue, Color.orange])
+        .chartLegend(series.count > 1 ? .visible : .hidden)
+        .chartXScale(domain: 0...max(duration, 1))
+        .chartYScale(domain: range ?? fittedRange)
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                Rectangle().fill(.clear).contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        guard case .active(let location) = phase, let frame = proxy.plotFrame,
+                              let time: Double = proxy.value(atX: location.x - geometry[frame].origin.x),
+                              (0...duration).contains(time) else {
+                            hoverTime = nil
+                            return
+                        }
+                        hoverTime = time
+                    }
+            }
+        }
     }
 }
 

@@ -86,6 +86,11 @@ final class AppModel: ObservableObject {
     private let store = CaptureStore(directory: ProcessInfo.processInfo.environment["METALCAP_CAPTURES_DIR"]
         .map { URL(fileURLWithPath: $0, isDirectory: true) })
     private let recorder = CaptureRecorder()
+    private let sampler = SystemSampler()
+    private var samplingTimer: Timer?
+    /// Power conditions when the current capture started.
+    private var startedOnBattery: Bool?
+    private var startedInLowPowerMode = false
     private let logSource = LogStreamSource()
     private var launched: [Int32: LaunchedProcessSource] = [:]
     private var lastEventAt = Date.distantPast
@@ -240,6 +245,16 @@ final class AppModel: ObservableObject {
         } else {
             let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
             recorder.start(at: Date(), preferredPID: frontmost)
+            startedOnBattery = SystemSampler.isOnBattery
+            startedInLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+            let timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.recorder.ingest(self.sampler.read(pids: self.recorder.candidatePIDs))
+                }
+            }
+            timer.fire()
+            samplingTimer = timer
             Sounds.start()
             isRecording = true
             message = nil
@@ -248,6 +263,8 @@ final class AppModel: ObservableObject {
 
     private func finishCapture() {
         isFinishing = false
+        samplingTimer?.invalidate()
+        samplingTimer = nil
         guard var capture = recorder.finish() else {
             Sounds.failure()
             message = frameDataRedacted
@@ -258,6 +275,8 @@ final class AppModel: ObservableObject {
             return
         }
         capture.name = nameAliases[capture.processName]
+        capture.onBattery = startedOnBattery
+        capture.lowPowerMode = startedInLowPowerMode
         do {
             try store.save(capture)
         } catch {

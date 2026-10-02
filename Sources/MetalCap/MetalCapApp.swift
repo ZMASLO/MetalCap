@@ -6,11 +6,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Needed when run as a bare executable (`swift run`) rather than from the .app bundle.
         NSApp.setActivationPolicy(.regular)
 
-        // `--snapshot <png> [--size WxH] [--show settings|overlay|unlock|rename] [--lang pl|en]` renders the main
+        // `--snapshot <png> [--size WxH] [--show settings|overlay|unlock|rename|system] [--lang pl|en]` renders the main
         // window, or the requested sheet, to a file and quits (for UI checks).
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: "--snapshot"), index + 1 < arguments.count {
             let sheet = arguments.firstIndex(of: "--show").flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
+            // `--show system` renders just the System section, which sits below the fold in the window.
+            if sheet == "system" {
+                guard let capture = AppModel.shared.captures.first(where: { $0.system != nil }),
+                      let samples = capture.system, let duration = capture.metrics?.duration else { exit(1) }
+                let renderer = ImageRenderer(content: SystemSectionView(samples: samples, duration: duration)
+                    .padding(20).frame(width: 900).background(Color(nsColor: .windowBackgroundColor)))
+                renderer.scale = 2
+                guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                      let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { exit(1) }
+                try? png.write(to: URL(fileURLWithPath: arguments[index + 1]))
+                exit(0)
+            }
             AppModel.shared.showingUnlockPrompt = sheet == "unlock"
             AppModel.shared.showingSettings = sheet == "settings" || sheet == "overlay"
             AppModel.shared.settingsTab = sheet == "overlay" ? 1 : 0
