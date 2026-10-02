@@ -356,6 +356,9 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         if let value = sample.cpuPower { #expect((0...500).contains(value)) }
         if let value = sample.gpuPower { #expect((0...500).contains(value)) }
         if let value = sample.systemPower { #expect((0...1000).contains(value)) }
+        if let value = sample.fastClusterActive { #expect((0...100).contains(value)) }
+        if let value = sample.fastClusterFrequency { #expect((300...8000).contains(value)) }
+        if let value = sample.fanSpeed { #expect((0...20000).contains(value)) }
         #expect((sample.systemMemory ?? 0) > 500)
         #expect((0...3).contains(sample.thermalState))
         #expect((reading.processes[pid]?.memory ?? 0) > 1)
@@ -365,6 +368,33 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
 }
 
 @Suite struct PowerChannelTests {
+    @Test func readsFrequencyTables() {
+        func entry(_ value: UInt32) -> [UInt8] { withUnsafeBytes(of: value.littleEndian) { Array($0) } + [0, 0, 0, 0] }
+        // kHz entries (M5 and later), Hz entries (earlier chips) and an empty slot.
+        let table = Data(entry(1_308_000) + entry(4_608_000) + entry(0) + entry(3_204_000_000))
+        #expect(PowerChannels.frequencies(fromTable: table) == [1308, 4608, 3204])
+        #expect(PowerChannels.frequencies(fromTable: Data([1, 2, 3])).isEmpty)
+    }
+
+    @Test func computesClusterActivity() {
+        let table: [Double] = [1000, 2000, 3000]
+        // A powered-down or idle cluster is not active; active states name their table index.
+        let states: [(name: String, residency: Int64)] = [("DOWN", 50), ("IDLE", 30), ("V0P2", 10), ("V2P0", 10)]
+        let activity = PowerChannels.activity(states: states, table: table)
+        #expect(activity?.active == 20)
+        #expect(activity?.frequency == 2000)
+
+        let idle = PowerChannels.activity(states: [("DOWN", 100), ("V0P2", 0)], table: table)
+        #expect(idle?.active == 0)
+        #expect(idle?.frequency == nil)
+
+        // Without an index in the name, active states map to the table by position.
+        let gpu = PowerChannels.activity(states: [("OFF", 0), ("P1", 10), ("P2", 30)], table: table)
+        #expect(gpu?.active == 100)
+        #expect(gpu?.frequency == 1750)
+        #expect(PowerChannels.activity(states: [("IDLE", 0)], table: table) == nil)
+    }
+
     @Test func recognizesCPUPowerHistograms() {
         for name in ["PACC", "PACC0", "MACC1", "EACC12", "PACC0 SRAM"] {
             #expect(PowerChannels.isCPUPowerHistogram(subgroup: "Energy", name: name), "\(name)")
@@ -395,5 +425,90 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         #expect(PowerChannels.joules(2_000_000, unit: "uJ ") == 2)
         #expect(PowerChannels.joules(3_000_000_000, unit: "nJ") == 3)
         #expect(PowerChannels.joules(1, unit: "8.3ns") == nil)
+    }
+}
+
+@Suite struct HardwareTests {
+    @Test func readsThisMachine() {
+        let hardware = HardwareInfo.current()
+        print("hardware:", hardware.summary, hardware)
+        #expect(!hardware.modelIdentifier.isEmpty)
+        #expect(!hardware.chip.isEmpty)
+        #expect(hardware.memoryGB >= 4)
+        #expect(hardware.cpuCores >= 1)
+        #expect(hardware.osVersion.split(separator: ".").count == 3)
+    }
+
+    @Test func summaryDoesNotRepeatTheChip() {
+        var hardware = HardwareInfo(modelName: "MacBook Pro (16-inch, M5 Pro)", modelIdentifier: "Mac17,8",
+                                    chip: "Apple M5 Pro", coreTiers: [.init(name: "Super", cores: 6), .init(name: "Performance", cores: 12)],
+                                    gpuCores: 20, memoryGB: 48, osVersion: "27.0.1", osBuild: "26A434")
+        #expect(hardware.summary == "MacBook Pro (16-inch, M5 Pro) · 48 GB · macOS 27.0.1")
+        #expect(hardware.cpuCores == 18)
+        hardware.modelName = nil
+        #expect(hardware.summary == "Mac17,8 · Apple M5 Pro · 48 GB · macOS 27.0.1")
+    }
+}
+
+@Suite struct ExportTests {
+    private var capture: Capture {
+        var capture = Capture(processName: "game", startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                              frameTimes: [10, 20, 10], gpuTimes: [5, 6], comment: "RT \"Ultra\", 1440p; MetalFX")
+        capture.name = "Game, The"
+        capture.hardware = HardwareInfo(modelName: "MacBook Pro", modelIdentifier: "Mac17,8", chip: "Apple M5 Pro",
+                                        coreTiers: [.init(name: "Super", cores: 6)], gpuCores: 20, memoryGB: 48,
+                                        osVersion: "27.0.1", osBuild: "26A434")
+        var first = SystemSample(time: 0.5, gpuUtilization: 90, thermalState: 0)
+        first.cpuPower = 12.345
+        var second = SystemSample(time: 1.5, gpuUtilization: 100, thermalState: 1)
+        second.cpuPower = 14
+        capture.system = [first, second]
+        return capture
+    }
+
+    @Test func framesCSV() {
+        #expect(CaptureExporter.framesCSV(capture, dialect: .standard) == """
+            frame,time_s,frame_time_ms,gpu_time_ms,fps
+            1,0.0100,10.00,5.00,100.0
+            2,0.0300,20.00,6.00,50.0
+            3,0.0400,10.00,,100.0
+
+            """)
+        #expect(CaptureExporter.framesCSV(capture, dialect: .semicolon).split(separator: "\n")[1] == "1;0,0100;10,00;5,00;100,0")
+    }
+
+    @Test func systemCSV() {
+        let lines = CaptureExporter.systemCSV(capture, dialect: .standard).split(separator: "\n").map { $0.split(separator: ",", omittingEmptySubsequences: false) }
+        #expect(lines.count == 3)
+        #expect(lines[0].count == lines[1].count)
+        #expect(lines[0][0] == "time_s" && lines[0][1] == "gpu_load_percent" && lines[0].last == "thermal_state")
+        #expect(lines[1][0] == "0.50" && lines[1][1] == "90.0" && lines[1].last == "0")
+        let power = lines[0].firstIndex(of: "cpu_power_w")!
+        #expect(lines[1][power] == "12.35" && lines[2][power] == "14.00")
+        // Values that were not recorded stay empty.
+        #expect(lines[1][lines[0].firstIndex(of: "fan_rpm")!] == "")
+    }
+
+    @Test func summaryCSVQuotesText() {
+        let lines = CaptureExporter.summaryCSV([capture], dialect: .standard).split(separator: "\n")
+        #expect(lines.count == 2)
+        #expect(lines[1].hasPrefix(#""Game, The",game,"RT ""Ultra"", 1440p; MetalFX",2027-01-15T08:00:00Z,0.04,3,75.0,"#))
+        #expect(lines[1].contains(",MacBook Pro,\"Mac17,8\",Apple M5 Pro,6,20,48,27.0.1,95.0,100.0,"))
+        #expect(lines[0].split(separator: ",").count == 21 + 16)
+
+        let polish = CaptureExporter.summaryCSV([capture], dialect: .semicolon).split(separator: "\n")[1]
+        #expect(polish.hasPrefix(#""Game, The";game;"RT ""Ultra"", 1440p; MetalFX";2027-01-15T08:00:00Z;0,04;3;75,0;"#))
+    }
+
+    @Test func jsonContainsEverything() throws {
+        let object = try #require(try JSONSerialization.jsonObject(with: CaptureExporter.json(capture)) as? [String: Any])
+        #expect(object["formatVersion"] as? Int == 1)
+        #expect(object["name"] as? String == "Game, The")
+        #expect(object["processName"] as? String == "game")
+        #expect(object["startedAt"] as? String == "2027-01-15T08:00:00Z")
+        #expect((object["hardware"] as? [String: Any])?["chip"] as? String == "Apple M5 Pro")
+        #expect((object["metrics"] as? [String: Any])?["average"] as? Double == 75)
+        #expect((object["frames"] as? [String: Any])?["frameTimesMs"] as? [Double] == [10, 20, 10])
+        #expect((object["system"] as? [[String: Any]])?.count == 2)
     }
 }

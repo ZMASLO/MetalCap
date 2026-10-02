@@ -20,7 +20,10 @@ if let sampleIndex = arguments.firstIndex(of: "--sample") {
               + "\"cpu_temp_max\":\(show(sample.cpuTemperature)),\"gpu_temp_avg\":\(show(sample.gpuTemperatureAverage)),"
               + "\"gpu_temp_max\":\(show(sample.gpuTemperature)),\"cpu_power\":\(show(sample.cpuPower)),"
               + "\"gpu_power\":\(show(sample.gpuPower)),\"system_power\":\(show(sample.systemPower)),"
-              + "\"gpu_usage\":\(show(sample.gpuUtilization)),\"cpu_usage\":\(show(sample.cpuUsage))}")
+              + "\"gpu_usage\":\(show(sample.gpuUtilization)),\"cpu_usage\":\(show(sample.cpuUsage)),"
+              + "\"fast_active\":\(show(sample.fastClusterActive)),\"fast_mhz\":\(show(sample.fastClusterFrequency)),"
+              + "\"second_active\":\(show(sample.secondClusterActive)),\"second_mhz\":\(show(sample.secondClusterFrequency)),"
+              + "\"gpu_mhz\":\(show(sample.gpuFrequency)),\"fan_rpm\":\(show(sample.fanSpeed))}")
         fflush(stdout)
     }
     exit(0)

@@ -24,6 +24,8 @@ public struct Capture: Codable, Identifiable, Equatable, Sendable {
     /// Whether the Mac ran on battery when the capture started.
     public var onBattery: Bool?
     public var lowPowerMode: Bool?
+    /// The machine the capture was recorded on.
+    public var hardware: HardwareInfo?
 
     public init(id: UUID = UUID(), processName: String, startedAt: Date,
                 frameTimes: [Double], gpuTimes: [Double],

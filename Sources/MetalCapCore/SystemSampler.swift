@@ -24,6 +24,17 @@ public struct SystemSample: Codable, Equatable, Sendable {
     public var gpuPower: Double?
     /// Power drawn by the whole Mac, in watts.
     public var systemPower: Double?
+    /// Share of time the fastest CPU cluster was active, in percent, and its average clock in MHz
+    /// while active. That cluster is the performance cores up to the M4 and the super cores from the M5 on.
+    public var fastClusterActive: Double?
+    public var fastClusterFrequency: Double?
+    /// The same for the other CPU cluster (efficiency cores up to the M4, performance cores from the M5 on).
+    public var secondClusterActive: Double?
+    public var secondClusterFrequency: Double?
+    /// Average GPU clock in MHz while active.
+    public var gpuFrequency: Double?
+    /// Speed of the fastest fan, in revolutions per minute (0 while the fans are stopped).
+    public var fanSpeed: Double?
     /// CPU load across all cores in percent (100 = every core busy).
     public var cpuUsage: Double?
     /// CPU used by the game in percent of one core (can exceed 100).
@@ -112,10 +123,16 @@ public final class SystemSampler {
         sample.gpuTemperature = temperatures?.gpu?.maximum
         sample.cpuTemperatureAverage = temperatures?.cpu?.average
         sample.gpuTemperatureAverage = temperatures?.gpu?.average
-        let watts = power?.read(at: date)
-        sample.cpuPower = watts?.cpu
-        sample.gpuPower = watts?.gpu
+        let reading = power?.read(at: date)
+        sample.cpuPower = reading?.cpuPower
+        sample.gpuPower = reading?.gpuPower
         sample.systemPower = smc?.systemPower()
+        sample.fastClusterActive = reading?.fastCluster?.active
+        sample.fastClusterFrequency = reading?.fastCluster?.frequency
+        sample.secondClusterActive = reading?.secondCluster?.active
+        sample.secondClusterFrequency = reading?.secondCluster?.frequency
+        sample.gpuFrequency = reading?.gpuFrequency
+        sample.fanSpeed = smc?.fanSpeeds().max()
         sample.cpuUsage = cpuUsage()
         sample.systemMemory = Self.systemMemory()
         sample.thermalState = ProcessInfo.processInfo.thermalState.rawValue
@@ -273,6 +290,18 @@ private final class SMCReader {
             return Double(watts)
         }
         return nil
+    }
+
+    /// Current speed of each fan in RPM; empty on fanless Macs.
+    func fanSpeeds() -> [Double] {
+        // 'FNum' holds the fan count, 'F<n>Ac' each fan's actual speed.
+        guard let count = read(0x464E_756D, size: 1)?.first else { return [] }
+        return (0..<UInt32(min(count, 8))).compactMap { fan in
+            let key = 0x4630_4163 + (fan << 16)
+            guard let info = keyInfo(key), info.dataType == Self.floatType, info.dataSize == 4,
+                  let speed = float(key), speed >= 0, speed < 20000 else { return nil }
+            return Double(speed)
+        }
     }
 
     private func discoverKeys() {
