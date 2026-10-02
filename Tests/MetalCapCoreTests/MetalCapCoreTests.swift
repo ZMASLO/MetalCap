@@ -157,10 +157,17 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         let older = Capture(processName: "a", startedAt: Date(timeIntervalSince1970: 1_000),
                             frameTimes: [16.67, 16.66], gpuTimes: [5, 6], wallDuration: 0.04, missingFrames: 1)
         let newer = Capture(processName: "b", startedAt: Date(timeIntervalSince1970: 2_000),
-                            frameTimes: [8.33], gpuTimes: [3])
+                            frameTimes: [8.33], gpuTimes: [3], comment: "RT Ultra, MetalFX Quality")
         try store.save(older)
         try store.save(newer)
         #expect(store.loadAll() == [newer, older])
+
+        // A capture saved before comments existed still loads.
+        let legacy = #"{"id":"\#(UUID().uuidString)","processName":"old","startedAt":"1970-01-01T00:00:10Z","frameTimes":[10],"gpuTimes":[1],"lostLines":3}"#
+        try Data(legacy.utf8).write(to: directory.appendingPathComponent("legacy.json"))
+        #expect(store.loadAll().last?.processName == "old")
+        #expect(store.loadAll().last?.comment == nil)
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("legacy.json"))
 
         try store.delete(newer.id)
         #expect(store.loadAll() == [older])

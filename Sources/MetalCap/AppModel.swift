@@ -244,6 +244,20 @@ final class AppModel: ObservableObject {
         selection = capture.id
     }
 
+    func setComment(_ comment: String, for id: Capture.ID) {
+        guard let index = captures.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newValue = trimmed.isEmpty ? nil : trimmed
+        guard captures[index].comment != newValue else { return }
+        captures[index].comment = newValue
+        do {
+            try store.save(captures[index])
+        } catch {
+            message = tr("Nie udało się zapisać komentarza: ", "Could not save the comment: ")
+                + error.localizedDescription
+        }
+    }
+
     func delete(_ id: Capture.ID) {
         try? store.delete(id)
         captures.removeAll { $0.id == id }

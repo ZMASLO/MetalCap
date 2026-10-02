@@ -18,6 +18,9 @@ struct MainView: View {
             List(model.captures, selection: $model.selection) { capture in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(capture.processName).lineLimit(1)
+                    if let comment = capture.comment {
+                        Text(comment).font(.caption).lineLimit(1)
+                    }
                     HStack {
                         Text(formatted(capture.startedAt, date: .abbreviated, time: .shortened))
                         Spacer()
@@ -50,10 +53,13 @@ struct MainView: View {
                     .background(.quaternary)
                 }
                 if let message = model.message {
-                    Label(message, systemImage: "info.circle")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
-                        .background(.quaternary)
+                    HStack {
+                        Label(message, systemImage: "info.circle")
+                        Spacer()
+                        Button("OK") { model.message = nil }
+                    }
+                    .padding(10)
+                    .background(.quaternary)
                 }
                 if let capture = model.captures.first(where: { $0.id == model.selection }) {
                     CaptureDetailView(capture: capture)
@@ -286,7 +292,35 @@ struct CaptureDetailView: View {
                 Label(warning, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
             }
+            CommentField(capture: capture)
+                .id(capture.id)
+                .padding(.top, 6)
         }
+    }
+}
+
+/// The capture's note. Edited locally and saved on Return, when focus leaves or the capture changes,
+/// so typing does not rewrite the capture file on every keystroke.
+struct CommentField: View {
+    let capture: Capture
+    @EnvironmentObject private var model: AppModel
+    @ViewState private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField(tr("Komentarz, np. ustawienia grafiki", "Comment, e.g. graphics settings"), text: $text)
+            .textFieldStyle(.roundedBorder)
+            .focused($focused)
+            .onAppear { text = capture.comment ?? "" }
+            .onSubmit(save)
+            .onChange(of: focused) { _, isFocused in
+                if !isFocused { save() }
+            }
+            .onDisappear(perform: save)
+    }
+
+    private func save() {
+        model.setComment(text, for: capture.id)
     }
 }
 

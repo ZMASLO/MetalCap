@@ -14,10 +14,12 @@ public struct Capture: Codable, Identifiable, Equatable, Sendable {
     public var wallDuration: Double?
     /// Frames the HUD's running counter says were presented but that were not in the log.
     public var missingFrames: Int?
+    /// The user's note, e.g. the graphics settings used for this run.
+    public var comment: String?
 
     public init(id: UUID = UUID(), processName: String, startedAt: Date,
                 frameTimes: [Double], gpuTimes: [Double],
-                wallDuration: Double? = nil, missingFrames: Int? = nil) {
+                wallDuration: Double? = nil, missingFrames: Int? = nil, comment: String? = nil) {
         self.id = id
         self.processName = processName
         self.startedAt = startedAt
@@ -25,6 +27,7 @@ public struct Capture: Codable, Identifiable, Equatable, Sendable {
         self.gpuTimes = gpuTimes
         self.wallDuration = wallDuration
         self.missingFrames = missingFrames
+        self.comment = comment
     }
 
     /// Share of the capture window covered by the recorded frames (1 = complete).
