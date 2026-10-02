@@ -67,14 +67,17 @@ public final class LaunchedProcessSource {
     public let processName: String
     private let process = Process()
 
-    /// - Parameter url: an executable or an `.app` bundle.
-    public init(url: URL, arguments: [String] = []) {
+    /// - Parameters:
+    ///   - url: an executable or an `.app` bundle.
+    ///   - configuration: overlay appearance for this game.
+    public init(url: URL, arguments: [String] = [], configuration: HUDConfiguration = HUDConfiguration()) {
         let executable = Bundle(url: url)?.executableURL ?? url
         processName = executable.lastPathComponent
         process.executableURL = executable
         process.arguments = arguments
         var environment = ProcessInfo.processInfo.environment
         for variable in HUDEnvironment.variables { environment[variable] = "1" }
+        for (variable, value) in configuration.environment { environment[variable] = value }
         process.environment = environment
     }
 

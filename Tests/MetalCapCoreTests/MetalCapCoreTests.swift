@@ -236,3 +236,31 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         #expect(LogPrivacy.isUnlocked(preferenceURL: preference, managedPreferenceURL: managed))
     }
 }
+
+@Suite struct HUDConfigurationTests {
+    @Test func defaultsLeaveEveryVariableUnset() {
+        let environment = HUDConfiguration().environment
+        #expect(environment.count == 4)
+        #expect(environment.values.allSatisfy { $0 == nil })
+    }
+
+    @Test func customValuesBecomeVariables() {
+        var configuration = HUDConfiguration()
+        configuration.elements = ["gputime", "fps", "not-a-metric"]
+        configuration.alignment = "bottomleft"
+        configuration.scale = 0.35
+        configuration.opacity = 0.5
+        let environment = configuration.environment
+        // Documented order, unknown names dropped.
+        #expect(environment["MTL_HUD_ELEMENTS"] == "fps,gputime")
+        #expect(environment["MTL_HUD_ALIGNMENT"] == "bottomleft")
+        #expect(environment["MTL_HUD_SCALE"] == "0.35")
+        #expect(environment["MTL_HUD_OPACITY"] == "0.50")
+    }
+
+    @Test func emptySelectionFallsBackToTheDefaultSet() {
+        var configuration = HUDConfiguration()
+        configuration.elements = []
+        #expect(configuration.environment["MTL_HUD_ELEMENTS"] == .some(nil))
+    }
+}

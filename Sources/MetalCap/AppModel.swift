@@ -25,6 +25,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var logUnlocked = AppModel.readLogUnlocked()
     @Published var showingUnlockPrompt = false
     @Published var showingSettings = false
+    @Published var settingsTab = 0
     @Published var message: String?
     @Published private(set) var language = L10n.language
     @Published var hotKey: KeyCombo {
@@ -49,6 +50,22 @@ final class AppModel: ObservableObject {
             }
         }
     }
+    /// Overlay appearance; applies to games launched after a change.
+    @Published var hudConfiguration: HUDConfiguration {
+        didSet {
+            guard hudConfiguration != oldValue else { return }
+            UserDefaults.standard.set(try? JSONEncoder().encode(hudConfiguration), forKey: "hudConfiguration")
+            // Sliders change the value continuously; write the environment once they settle.
+            pendingHUDApply?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.hudEnabled else { return }
+                try? HUDEnvironment.apply(self.hudConfiguration)
+            }
+            pendingHUDApply = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+        }
+    }
+    private var pendingHUDApply: DispatchWorkItem?
     @Published var skipUnlockPrompt = UserDefaults.standard.bool(forKey: "skipUnlockPrompt") {
         didSet { UserDefaults.standard.set(skipUnlockPrompt, forKey: "skipUnlockPrompt") }
     }
@@ -74,6 +91,8 @@ final class AppModel: ObservableObject {
     private init() {
         hotKey = UserDefaults.standard.data(forKey: "hotKey")
             .flatMap { try? JSONDecoder().decode(KeyCombo.self, from: $0) } ?? .default
+        hudConfiguration = UserDefaults.standard.data(forKey: "hudConfiguration")
+            .flatMap { try? JSONDecoder().decode(HUDConfiguration.self, from: $0) } ?? HUDConfiguration()
         captures = store.loadAll()
         selection = captures.first?.id
         showingUnlockPrompt = !logUnlocked && !skipUnlockPrompt
@@ -119,7 +138,7 @@ final class AppModel: ObservableObject {
 
     func setHUDEnabled(_ enabled: Bool) {
         do {
-            try HUDEnvironment.setEnabled(enabled)
+            try HUDEnvironment.setEnabled(enabled, configuration: hudConfiguration)
             message = enabled
                 ? tr("Metal HUD włączony. Uruchom ponownie grę oraz Steam/CrossOver, żeby zadziałał.",
                      "Metal HUD is on. Restart the game and Steam/CrossOver for it to take effect.")
@@ -168,7 +187,7 @@ final class AppModel: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        let source = LaunchedProcessSource(url: url)
+        let source = LaunchedProcessSource(url: url, configuration: hudConfiguration)
         source.onEvent = { [weak self] event in
             Task { @MainActor in self?.handle(event, fromLog: false) }
         }
