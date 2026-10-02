@@ -271,3 +271,27 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         #expect(configuration.environment["MTL_HUD_ELEMENTS"] == .some(nil))
     }
 }
+
+@Suite struct SortTests {
+    private func capture(_ process: String, at seconds: Double, name: String? = nil) -> Capture {
+        var capture = Capture(processName: process, startedAt: Date(timeIntervalSince1970: seconds),
+                              frameTimes: [10], gpuTimes: [1])
+        capture.name = name
+        return capture
+    }
+
+    @Test func sortsByDate() {
+        let captures = [capture("b", at: 2), capture("a", at: 3), capture("c", at: 1)]
+        #expect(captures.sorted(by: .date, ascending: true).map(\.processName) == ["c", "b", "a"])
+        #expect(captures.sorted(by: .date, ascending: false).map(\.processName) == ["a", "b", "c"])
+    }
+
+    @Test func sortsByDisplayNameThenNewestFirst() {
+        let captures = [
+            capture("zeta", at: 1), capture("proc", at: 2, name: "alpha"),
+            capture("Zeta", at: 3), capture("beta", at: 4),
+        ]
+        #expect(captures.sorted(by: .name, ascending: true).map(\.startedAt.timeIntervalSince1970) == [2, 4, 3, 1])
+        #expect(captures.sorted(by: .name, ascending: false).map(\.startedAt.timeIntervalSince1970) == [3, 1, 4, 2])
+    }
+}

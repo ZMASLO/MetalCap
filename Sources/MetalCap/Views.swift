@@ -12,10 +12,12 @@ private func formatted(_ date: Date, date dateStyle: Date.FormatStyle.DateStyle,
 
 struct MainView: View {
     @EnvironmentObject private var model: AppModel
+    @AppStorage("sortKey") private var sortKey = CaptureSortKey.date
+    @AppStorage("sortAscending") private var sortAscending = false
 
     var body: some View {
         NavigationSplitView {
-            List(model.captures, selection: $model.selection) { capture in
+            List(model.captures.sorted(by: sortKey, ascending: sortAscending), selection: $model.selection) { capture in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(capture.displayName).lineLimit(1)
                     HStack {
@@ -33,6 +35,27 @@ struct MainView: View {
                     Button(tr("Zmień nazwę…", "Rename…")) { model.renaming = capture }
                     Button(tr("Usuń", "Delete"), role: .destructive) { model.delete(capture.id) }
                 }
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                HStack(spacing: 6) {
+                    Picker(tr("Sortuj według", "Sort by"), selection: $sortKey) {
+                        Text(tr("Data", "Date")).tag(CaptureSortKey.date)
+                        Text(tr("Nazwa gry", "Game name")).tag(CaptureSortKey.name)
+                    }
+                    .labelsHidden()
+                    .controlSize(.small)
+                    Button(sortAscending ? tr("Rosnąco", "Ascending") : tr("Malejąco", "Descending"),
+                           systemImage: sortAscending ? "arrow.up" : "arrow.down") {
+                        sortAscending.toggle()
+                    }
+                    .labelStyle(.iconOnly)
+                    .controlSize(.small)
+                    .help(sortAscending
+                          ? tr("Rosnąco — kliknij, żeby odwrócić", "Ascending — click to reverse")
+                          : tr("Malejąco — kliknij, żeby odwrócić", "Descending — click to reverse"))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 240)
         } detail: {

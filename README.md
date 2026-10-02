@@ -23,6 +23,16 @@ Skrót i sposób liczenia 1% Low zmienisz w ustawieniach (ikona zębatki).
 
 HUD musi być widoczny podczas pomiaru: po ukryciu (⇧F9) macOS przestaje aktualizować czasy klatek.
 
+## Lista wyników
+
+- **Komentarz**: pole pod nagłówkiem wyniku, np. na ustawienia grafiki; widać go też na liście.
+- **Nazwa**: ikona ołówka przy nazwie albo „Zmień nazwę…” w menu kontekstowym. Nazwę można zastosować do wszystkich wyników tego samego procesu i przyszłych pomiarów.
+- **Sortowanie**: nad listą wybór „Data” lub „Nazwa gry” i przycisk kierunku.
+
+## Nakładka HUD
+
+Ustawienia → „Nakładka HUD”: wybór wyświetlanych elementów, pozycja, skala i krycie. Odpowiadają zmiennym `MTL_HUD_ELEMENTS`, `MTL_HUD_ALIGNMENT`, `MTL_HUD_SCALE` i `MTL_HUD_OPACITY` i działają dla gier uruchomionych po zmianie.
+
 ## Skąd biorą się dane
 
 Metal HUD z `MTL_HUD_LOG_ENABLED=1` wypisuje raz na sekundę linię `metal-HUD: …` z czasami wszystkich klatek. Trafia ona w dwa miejsca:

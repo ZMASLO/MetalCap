@@ -44,6 +44,26 @@ public struct Capture: Codable, Identifiable, Equatable, Sendable {
     public var metrics: FrameMetrics? { FrameMetrics(frameTimes: frameTimes) }
 }
 
+/// What the capture list is ordered by.
+public enum CaptureSortKey: String, CaseIterable, Sendable {
+    case date, name
+}
+
+extension Array where Element == Capture {
+    /// - Parameter ascending: oldest first for `.date`, A to Z for `.name`.
+    ///   Captures with the same name are always listed newest first.
+    public func sorted(by key: CaptureSortKey, ascending: Bool) -> [Capture] {
+        sorted { first, second in
+            if key == .name {
+                let order = first.displayName.localizedCaseInsensitiveCompare(second.displayName)
+                if order != .orderedSame { return (order == .orderedAscending) == ascending }
+                return first.startedAt > second.startedAt
+            }
+            return (first.startedAt < second.startedAt) == ascending
+        }
+    }
+}
+
 /// Turns the stream of HUD lines into a capture bounded by a start and a stop time.
 ///
 /// The HUD keeps logging for as long as the game runs, so "recording" only decides
