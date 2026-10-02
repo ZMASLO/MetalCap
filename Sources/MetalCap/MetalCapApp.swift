@@ -14,6 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 guard let window = NSApp.windows.first(where: { $0.title == "MetalCap" }) else { exit(1) }
                 if let size, size.count == 2 { window.setContentSize(NSSize(width: size[0], height: size[1])) }
+                // An inactive window renders its toolbar and selection differently.
+                NSApp.activate(ignoringOtherApps: true)
+                window.makeKeyAndOrderFront(nil)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     guard let view = window.contentView?.superview,
                           let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { exit(1) }

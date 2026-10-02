@@ -46,6 +46,8 @@ struct MainView: View {
                 }
             }
         }
+        // Without this the toolbar gets its own white strip that overhangs the sidebar edge.
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .navigationSubtitle(model.activeProcess.map { "Wykryto: \($0)" } ?? "Nie wykryto gry")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
