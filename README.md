@@ -16,6 +16,11 @@ open build/MetalCap.app
 
 Ikonę generuje `swift Scripts/make-icon.swift` (zapisuje `Resources/AppIcon.icns`); wersję paczki ustawia zmienna `VERSION`, np. `VERSION=0.2.0 Scripts/make-app.sh`.
 
+### Testy
+
+- `swift test` — testy jednostkowe rdzenia (statystyki, parser, rejestrator, eksport, odczyty systemowe); działają wszędzie, także w CI.
+- `Scripts/e2e.sh` — testy całościowe: uruchamiają małą aplikację Metal (`MetalCapProbe`, 60 FPS) i mierzą ją tak jak MetalCap — przez jej wyjście (ścieżka „Uruchom grę…”), przez log systemowy (ścieżka Steam/CrossOver, wymaga zainstalowanego profilu) oraz trybem `MetalCap --run`. Sprawdzają AVG i medianę ≈ 60 FPS, liczbę klatek, pokrycie czasu pomiaru, próbki systemowe, zapis i eksport. Wymagają odblokowanego Maca z włączonym ekranem, więc uruchamia się je tylko lokalnie; bez skryptu są pomijane.
+
 ### CI i wydania
 
 - **CI** (`.github/workflows/ci.yml`): przy każdym pushu do `main` i pull requeście buduje projekt, uruchamia testy, składa `MetalCap.app` i dołącza ją jako artefakt.
