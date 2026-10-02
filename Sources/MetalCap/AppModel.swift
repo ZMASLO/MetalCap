@@ -26,6 +26,8 @@ final class AppModel: ObservableObject {
     @Published var showingUnlockPrompt = false
     @Published var showingSettings = false
     @Published var settingsTab = 0
+    /// The capture whose name is being edited.
+    @Published var renaming: Capture?
     @Published var message: String?
     @Published private(set) var language = L10n.language
     @Published var hotKey: KeyCombo {
@@ -246,7 +248,7 @@ final class AppModel: ObservableObject {
 
     private func finishCapture() {
         isFinishing = false
-        guard let capture = recorder.finish() else {
+        guard var capture = recorder.finish() else {
             Sounds.failure()
             message = frameDataRedacted
                 ? tr("Brak klatek: macOS ukrywa czasy klatek tej gry w logu systemowym.",
@@ -255,6 +257,7 @@ final class AppModel: ObservableObject {
                      "No frames: no game was logging during the capture. Check that Metal HUD is on and visible.")
             return
         }
+        capture.name = nameAliases[capture.processName]
         do {
             try store.save(capture)
         } catch {
@@ -263,6 +266,32 @@ final class AppModel: ObservableObject {
         }
         captures.insert(capture, at: 0)
         selection = capture.id
+    }
+
+    /// Names the user asked to reuse for every capture of a process, keyed by process name.
+    private var nameAliases: [String: String] {
+        get { UserDefaults.standard.dictionary(forKey: "nameAliases") as? [String: String] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: "nameAliases") }
+    }
+
+    /// - Parameter wholeProcess: also rename the other captures of the same process and
+    ///   use the name for its future captures.
+    func rename(_ id: Capture.ID, to name: String, wholeProcess: Bool) {
+        guard let capture = captures.first(where: { $0.id == id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newName = trimmed.isEmpty || trimmed == capture.processName ? nil : trimmed
+        if wholeProcess { nameAliases[capture.processName] = newName }
+
+        for index in captures.indices
+        where captures[index].id == id || (wholeProcess && captures[index].processName == capture.processName) {
+            guard captures[index].name != newName else { continue }
+            captures[index].name = newName
+            do {
+                try store.save(captures[index])
+            } catch {
+                message = tr("Nie udało się zapisać nazwy: ", "Could not save the name: ") + error.localizedDescription
+            }
+        }
     }
 
     func setComment(_ comment: String, for id: Capture.ID) {

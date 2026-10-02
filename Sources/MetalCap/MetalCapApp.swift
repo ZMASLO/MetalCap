@@ -6,7 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Needed when run as a bare executable (`swift run`) rather than from the .app bundle.
         NSApp.setActivationPolicy(.regular)
 
-        // `--snapshot <png> [--size WxH] [--show settings|overlay|unlock] [--lang pl|en]` renders the main
+        // `--snapshot <png> [--size WxH] [--show settings|overlay|unlock|rename] [--lang pl|en]` renders the main
         // window, or the requested sheet, to a file and quits (for UI checks).
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: "--snapshot"), index + 1 < arguments.count {
@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppModel.shared.showingUnlockPrompt = sheet == "unlock"
             AppModel.shared.showingSettings = sheet == "settings" || sheet == "overlay"
             AppModel.shared.settingsTab = sheet == "overlay" ? 1 : 0
+            if sheet == "rename" { AppModel.shared.renaming = AppModel.shared.captures.first }
             let size = arguments.firstIndex(of: "--size")
                 .flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1].split(separator: "x").compactMap { Double($0) } : nil }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {

@@ -17,7 +17,7 @@ struct MainView: View {
         NavigationSplitView {
             List(model.captures, selection: $model.selection) { capture in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(capture.processName).lineLimit(1)
+                    Text(capture.displayName).lineLimit(1)
                     HStack {
                         Text(formatted(capture.startedAt, date: .abbreviated, time: .shortened))
                         Spacer()
@@ -30,6 +30,7 @@ struct MainView: View {
                     }
                 }
                 .contextMenu {
+                    Button(tr("Zmień nazwę…", "Rename…")) { model.renaming = capture }
                     Button(tr("Usuń", "Delete"), role: .destructive) { model.delete(capture.id) }
                 }
             }
@@ -107,6 +108,7 @@ struct MainView: View {
         }
         .sheet(isPresented: $model.showingSettings) { SettingsView().id(model.language) }
         .sheet(isPresented: $model.showingUnlockPrompt) { UnlockPromptView() }
+        .sheet(item: $model.renaming) { RenameView(capture: $0) }
     }
 }
 
@@ -347,6 +349,7 @@ enum LowVariant: String, CaseIterable {
 
 struct CaptureDetailView: View {
     let capture: Capture
+    @EnvironmentObject private var model: AppModel
     @AppStorage("lowVariant") private var lowVariant = LowVariant.average
 
     var body: some View {
@@ -412,7 +415,18 @@ struct CaptureDetailView: View {
 
     private func header(_ metrics: FrameMetrics) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(capture.processName).font(.title2).bold()
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(capture.displayName).font(.title2).bold()
+                Button(tr("Zmień nazwę", "Rename"), systemImage: "pencil") { model.renaming = capture }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .help(tr("Zmień nazwę", "Rename"))
+            }
+            if capture.name != nil {
+                Text(tr("Proces: \(capture.processName)", "Process: \(capture.processName)"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Text("\(formatted(capture.startedAt, date: .long, time: .standard)) · \(String(format: "%.1f", metrics.duration)) s · \(tr("klatki", "frames")): \(metrics.frameCount)")
                 .foregroundStyle(.secondary)
             if let warning {
@@ -423,6 +437,50 @@ struct CaptureDetailView: View {
                 .id(capture.id)
                 .padding(.top, 6)
         }
+    }
+}
+
+/// Asks for a new name for a capture, optionally for every capture of the same process.
+struct RenameView: View {
+    let capture: Capture
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @ViewState private var name: String
+    @ViewState private var wholeProcess = false
+
+    init(capture: Capture) {
+        self.capture = capture
+        _name = ViewState(initialValue: capture.displayName)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(tr("Zmień nazwę", "Rename")).font(.title3.weight(.semibold))
+            TextField(capture.processName, text: $name)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(save)
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle(tr("Zastosuj do wszystkich wyników procesu „\(capture.processName)”",
+                          "Apply to every result of the process “\(capture.processName)”"), isOn: $wholeProcess)
+                Text(tr("Nazwa będzie też nadawana przyszłym pomiarom tego procesu. Puste pole przywraca nazwę procesu.",
+                        "The name is also given to future captures of this process. An empty field restores the process name."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Spacer()
+                Button(tr("Anuluj", "Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(tr("Zapisz", "Save"), action: save).keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 440)
+    }
+
+    private func save() {
+        model.rename(capture.id, to: name, wholeProcess: wholeProcess)
+        dismiss()
     }
 }
 

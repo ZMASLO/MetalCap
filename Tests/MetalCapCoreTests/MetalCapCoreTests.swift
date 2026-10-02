@@ -167,6 +167,13 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         try Data(legacy.utf8).write(to: directory.appendingPathComponent("legacy.json"))
         #expect(store.loadAll().last?.processName == "old")
         #expect(store.loadAll().last?.comment == nil)
+        #expect(store.loadAll().last?.displayName == "old")
+
+        var renamed = older
+        renamed.name = "Game A"
+        try store.save(renamed)
+        #expect(store.loadAll().first { $0.id == older.id }?.displayName == "Game A")
+        try store.save(older)
         try FileManager.default.removeItem(at: directory.appendingPathComponent("legacy.json"))
 
         try store.delete(newer.id)

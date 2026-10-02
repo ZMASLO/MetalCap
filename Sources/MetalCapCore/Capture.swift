@@ -3,7 +3,10 @@ import Foundation
 /// One recorded benchmark run.
 public struct Capture: Codable, Identifiable, Equatable, Sendable {
     public var id: UUID
+    /// Name of the executable the frames came from.
     public var processName: String
+    /// Name chosen by the user to show instead of the process name.
+    public var name: String?
     public var startedAt: Date
     /// Present-to-present intervals in milliseconds.
     public var frameTimes: [Double]
@@ -29,6 +32,8 @@ public struct Capture: Codable, Identifiable, Equatable, Sendable {
         self.missingFrames = missingFrames
         self.comment = comment
     }
+
+    public var displayName: String { name ?? processName }
 
     /// Share of the capture window covered by the recorded frames (1 = complete).
     public var coverage: Double? {
