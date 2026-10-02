@@ -18,9 +18,6 @@ struct MainView: View {
             List(model.captures, selection: $model.selection) { capture in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(capture.processName).lineLimit(1)
-                    if let comment = capture.comment {
-                        Text(comment).font(.caption).lineLimit(1)
-                    }
                     HStack {
                         Text(formatted(capture.startedAt, date: .abbreviated, time: .shortened))
                         Spacer()
@@ -28,6 +25,9 @@ struct MainView: View {
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    if let comment = capture.comment {
+                        Text(comment).font(.caption).lineLimit(2)
+                    }
                 }
                 .contextMenu {
                     Button(tr("Usuń", "Delete"), role: .destructive) { model.delete(capture.id) }
@@ -299,22 +299,25 @@ struct CaptureDetailView: View {
     }
 }
 
-/// The capture's note. Edited locally and saved on Return, when focus leaves or the capture changes,
-/// so typing does not rewrite the capture file on every keystroke.
+/// The capture's note. Edited locally and saved shortly after typing stops (and on Return or
+/// when the capture changes), so the capture file is not rewritten on every keystroke.
 struct CommentField: View {
     let capture: Capture
     @EnvironmentObject private var model: AppModel
-    @ViewState private var text = ""
-    @FocusState private var focused: Bool
+    @ViewState private var text: String
+
+    init(capture: Capture) {
+        self.capture = capture
+        _text = ViewState(initialValue: capture.comment ?? "")
+    }
 
     var body: some View {
         TextField(tr("Komentarz, np. ustawienia grafiki", "Comment, e.g. graphics settings"), text: $text)
             .textFieldStyle(.roundedBorder)
-            .focused($focused)
-            .onAppear { text = capture.comment ?? "" }
             .onSubmit(save)
-            .onChange(of: focused) { _, isFocused in
-                if !isFocused { save() }
+            .task(id: text) {
+                try? await Task.sleep(for: .milliseconds(500))
+                if !Task.isCancelled { save() }
             }
             .onDisappear(perform: save)
     }

@@ -63,7 +63,9 @@ final class AppModel: ObservableObject {
     /// How long after "stop" to wait for the HUD line covering the last frames.
     private static let finishDelay: TimeInterval = 2
 
-    private let store = CaptureStore()
+    /// `METALCAP_CAPTURES_DIR` points the app at another capture folder (used for UI checks with sample data).
+    private let store = CaptureStore(directory: ProcessInfo.processInfo.environment["METALCAP_CAPTURES_DIR"]
+        .map { URL(fileURLWithPath: $0, isDirectory: true) })
     private let recorder = CaptureRecorder()
     private let logSource = LogStreamSource()
     private var launched: [Int32: LaunchedProcessSource] = [:]
