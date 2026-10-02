@@ -166,3 +166,36 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         #expect(store.loadAll() == [older])
     }
 }
+
+@Suite struct LanguageTests {
+    @Test func followsSystemLanguage() {
+        #expect(Language.resolve(preference: "auto", preferredLanguages: ["pl-PL", "en-US"]) == .polish)
+        #expect(Language.resolve(preference: nil, preferredLanguages: ["pl"]) == .polish)
+        #expect(Language.resolve(preference: "auto", preferredLanguages: ["en-US", "pl-PL"]) == .english)
+        #expect(Language.resolve(preference: "auto", preferredLanguages: ["de-DE"]) == .english)
+        #expect(Language.resolve(preference: "auto", preferredLanguages: []) == .english)
+    }
+
+    @Test func preferenceOverridesSystem() {
+        #expect(Language.resolve(preference: "en", preferredLanguages: ["pl-PL"]) == .english)
+        #expect(Language.resolve(preference: "pl", preferredLanguages: ["en-US"]) == .polish)
+    }
+}
+
+@Suite struct LogPrivacyTests {
+    @Test func preferenceFileRoundTrip() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MetalCapTests-\(UUID().uuidString).plist")
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(LogPrivacy.isUnlocked(at: url) == false)
+        try LogPrivacy.preferenceData().write(to: url)
+        #expect(LogPrivacy.isUnlocked(at: url))
+
+        try Data("<plist version=\"1.0\"><dict/></plist>".utf8).write(to: url)
+        #expect(LogPrivacy.isUnlocked(at: url) == false)
+    }
+
+    @Test func escapesAppleScriptStrings() {
+        #expect(LogPrivacy.appleScriptLiteral(#"a "b" \c"#) == #""a \"b\" \\c""#)
+    }
+}

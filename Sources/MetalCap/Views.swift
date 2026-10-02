@@ -6,9 +6,12 @@ private func fps(_ value: Double) -> String {
     value.isFinite ? String(format: "%.1f", value) : "–"
 }
 
+private func formatted(_ date: Date, date dateStyle: Date.FormatStyle.DateStyle, time: Date.FormatStyle.TimeStyle) -> String {
+    date.formatted(Date.FormatStyle(date: dateStyle, time: time).locale(L10n.language.locale))
+}
+
 struct MainView: View {
     @EnvironmentObject private var model: AppModel
-    @ViewState private var showingSettings = false
 
     var body: some View {
         NavigationSplitView {
@@ -16,7 +19,7 @@ struct MainView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(capture.processName).lineLimit(1)
                     HStack {
-                        Text(capture.startedAt.formatted(date: .abbreviated, time: .shortened))
+                        Text(formatted(capture.startedAt, date: .abbreviated, time: .shortened))
                         Spacer()
                         Text("\(fps(capture.metrics?.average ?? .nan)) FPS")
                     }
@@ -24,12 +27,28 @@ struct MainView: View {
                     .foregroundStyle(.secondary)
                 }
                 .contextMenu {
-                    Button("Usuń", role: .destructive) { model.delete(capture.id) }
+                    Button(tr("Usuń", "Delete"), role: .destructive) { model.delete(capture.id) }
                 }
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 240)
         } detail: {
             VStack(spacing: 0) {
+                if model.frameDataRedacted {
+                    HStack {
+                        Label(model.logUnlocked
+                              ? tr("Log nadal ukrywa czasy klatek tej gry. Uruchom ją ponownie; jeśli to nie pomoże, odblokowanie nie działa na tej wersji macOS.",
+                                   "The log still hides this game's frame times. Restart the game; if that does not help, unlocking does not work on this macOS version.")
+                              : tr("macOS ukrywa czasy klatek tej gry, więc pomiar będzie pusty.",
+                                   "macOS hides this game's frame times, so a capture would be empty."),
+                              systemImage: "eye.slash")
+                        Spacer()
+                        if !model.logUnlocked {
+                            Button(tr("Odblokuj…", "Unlock…")) { model.showingUnlockPrompt = true }
+                        }
+                    }
+                    .padding(10)
+                    .background(.quaternary)
+                }
                 if let message = model.message {
                     Label(message, systemImage: "info.circle")
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -40,15 +59,17 @@ struct MainView: View {
                     CaptureDetailView(capture: capture)
                 } else {
                     ContentUnavailableView(
-                        "Brak przechwyceń",
+                        tr("Brak przechwyceń", "No captures"),
                         systemImage: "speedometer",
-                        description: Text("Włącz Metal HUD, uruchom grę i naciśnij \(model.hotKey.display), żeby rozpocząć i zakończyć pomiar."))
+                        description: Text(tr("Włącz Metal HUD, uruchom grę i naciśnij \(model.hotKey.display), żeby rozpocząć i zakończyć pomiar.",
+                                             "Turn on Metal HUD, start a game and press \(model.hotKey.display) to begin and end a capture.")))
                 }
             }
         }
         // Without this the toolbar gets its own white strip that overhangs the sidebar edge.
         .toolbarBackground(.hidden, for: .windowToolbar)
-        .navigationSubtitle(model.activeProcess.map { "Wykryto: \($0)" } ?? "Nie wykryto gry")
+        .navigationSubtitle(model.activeProcess.map { tr("Wykryto: \($0)", "Detected: \($0)") }
+                            ?? tr("Nie wykryto gry", "No game detected"))
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 6) {
@@ -59,24 +80,27 @@ struct MainView: View {
                         .labelsHidden()
                 }
                 .padding(.horizontal, 6)
-                .help("Włącza Metal HUD i logowanie klatek dla aplikacji uruchomionych od tej chwili")
+                .help(tr("Włącza Metal HUD i logowanie klatek dla aplikacji uruchomionych od tej chwili",
+                         "Turns on Metal HUD and frame logging for apps launched from now on"))
             }
             ToolbarItemGroup(placement: .primaryAction) {
-                Button("Uruchom grę…", systemImage: "play.fill") { model.launchGame() }
+                Button(tr("Uruchom grę…", "Launch game…"), systemImage: "play.fill") { model.launchGame() }
                     .labelStyle(.titleAndIcon)
-                    .help("Uruchamia grę z Metal HUD i czyta czasy klatek bezpośrednio z niej")
-                Button(model.isRecording ? "Zatrzymaj" : "Nagrywaj",
+                    .help(tr("Uruchamia grę z Metal HUD i czyta czasy klatek bezpośrednio z niej",
+                             "Starts a game with Metal HUD and reads frame times directly from it"))
+                Button(model.isRecording ? tr("Zatrzymaj", "Stop") : tr("Nagrywaj", "Record"),
                        systemImage: model.isRecording ? "stop.circle.fill" : "record.circle") {
                     model.toggleCapture()
                 }
                 .labelStyle(.titleAndIcon)
                 .disabled(model.isFinishing)
-                .help("Start/stop przechwytywania (\(model.hotKey.display))")
-                Button("Ustawienia", systemImage: "gearshape") { showingSettings = true }
-                    .help("Ustawienia")
+                .help(tr("Start/stop przechwytywania", "Start/stop capture") + " (\(model.hotKey.display))")
+                Button(tr("Ustawienia", "Settings"), systemImage: "gearshape") { model.showingSettings = true }
+                    .help(tr("Ustawienia", "Settings"))
             }
         }
-        .sheet(isPresented: $showingSettings) { SettingsView() }
+        .sheet(isPresented: $model.showingSettings) { SettingsView().id(model.language) }
+        .sheet(isPresented: $model.showingUnlockPrompt) { UnlockPromptView() }
     }
 }
 
@@ -88,18 +112,85 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Form {
-                LabeledContent("Skrót start/stop") { HotKeyRecorder(combo: $model.hotKey) }
-                Picker("Sposób liczenia 1% Low", selection: $lowVariant) {
+                LabeledContent(tr("Skrót start/stop", "Start/stop shortcut")) { HotKeyRecorder(combo: $model.hotKey) }
+                Picker(tr("Sposób liczenia 1% Low", "1% Low method"), selection: $lowVariant) {
                     ForEach(LowVariant.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
+                Picker(tr("Język", "Language"), selection: $model.languagePreference) {
+                    Text(tr("Automatycznie", "Automatic")).tag("auto")
+                    Text("Polski").tag("pl")
+                    Text("English").tag("en")
+                }
+                LabeledContent(tr("Czasy klatek w logu", "Frame times in the log")) {
+                    HStack {
+                        Text(model.logUnlocked ? tr("Odblokowane", "Unlocked") : tr("Ukryte", "Hidden"))
+                            .foregroundStyle(.secondary)
+                        Button(model.logUnlocked ? tr("Zablokuj ponownie…", "Lock again…") : tr("Odblokuj…", "Unlock…")) {
+                            model.setLogUnlocked(!model.logUnlocked)
+                        }
+                    }
+                }
             }
+            Text(tr("Menu systemowe i okna wyboru plików zmienią język po ponownym uruchomieniu MetalCap.",
+                    "System menus and file dialogs switch language after MetalCap is restarted."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
             HStack {
                 Spacer()
-                Button("Gotowe") { dismiss() }.keyboardShortcut(.defaultAction)
+                Button(tr("Gotowe", "Done")) { dismiss() }.keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
-        .frame(width: 420)
+        .frame(width: 480)
+    }
+}
+
+/// Shown at launch while the unified log still hides frame data: explains why unlocking is needed.
+struct UnlockPromptView: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    private var points: [String] {
+        [
+            tr("Powstanie jeden plik: \(LogPrivacy.preferenceURL.path)",
+               "One file is created: \(LogPrivacy.preferenceURL.path)"),
+            tr("Odsłania on wyłącznie komunikaty Metal HUD, czyli numery i czasy klatek. Reszta logu pozostaje ukryta.",
+               "It reveals only Metal HUD messages, i.e. frame numbers and frame times. The rest of the log stays hidden."),
+            tr("macOS poprosi o hasło administratora.", "macOS will ask for an administrator password."),
+            tr("Możesz to cofnąć w ustawieniach MetalCap.", "You can undo this in MetalCap's settings."),
+        ]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label(tr("Odblokuj pomiar dla wszystkich gier", "Unlock captures for every game"), systemImage: "lock.open")
+                .font(.title3.weight(.semibold))
+            Text(tr("macOS ukrywa czasy klatek Metal HUD w logu systemowym. Dlatego MetalCap mierzy teraz tylko gry uruchomione przyciskiem „Uruchom grę…”, a gry ze Steam, CrossOver i innych launcherów pozostają niewidoczne.",
+                    "macOS hides Metal HUD frame times in the system log. That is why MetalCap can currently measure only games started with “Launch game…”, while games from Steam, CrossOver and other launchers stay invisible."))
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(tr("Co się zmieni", "What changes")).font(.headline)
+                ForEach(points, id: \.self) { point in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("•")
+                        Text(point).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            HStack {
+                Toggle(tr("Nie pokazuj ponownie", "Don't show again"), isOn: $model.skipUnlockPrompt)
+                Spacer()
+                Button(tr("Nie teraz", "Not now")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(tr("Odblokuj…", "Unlock…")) {
+                    dismiss()
+                    model.setLogUnlocked(true)
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(.top, 4)
+        }
+        .padding(22)
+        .frame(width: 520)
     }
 }
 
@@ -109,8 +200,8 @@ enum LowVariant: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .average: "Average (średnia z najwolniejszych klatek)"
-        case .integral: "Integral (jak MSI Afterburner)"
+        case .average: tr("Average (średnia z najwolniejszych klatek)", "Average (mean of the slowest frames)")
+        case .integral: tr("Integral (jak MSI Afterburner)", "Integral (as in MSI Afterburner)")
         }
     }
 }
@@ -135,7 +226,7 @@ struct CaptureDetailView: View {
                     }
                     HStack(spacing: 12) {
                         MetricTile(title: "Max", value: metrics.max)
-                        MetricTile(title: "Mediana", value: metrics.median)
+                        MetricTile(title: tr("Mediana", "Median"), value: metrics.median)
                         MetricTile(title: "P5", value: metrics.p5)
                         MetricTile(title: "P0.2", value: metrics.p0_2)
                         MetricTile(title: "0.1% Low",
@@ -152,7 +243,7 @@ struct CaptureDetailView: View {
                         ])
                     }
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Czas klatki").font(.headline)
+                        Text(tr("Czas klatki", "Frame time")).font(.headline)
                         FrameTimeChart(points: FrameTimeChart.points(for: capture.frameTimes))
                             .frame(minHeight: 240, maxHeight: .infinity)
                     }
@@ -162,17 +253,20 @@ struct CaptureDetailView: View {
               }
             }
         } else {
-            ContentUnavailableView("Przechwycenie nie zawiera klatek", systemImage: "exclamationmark.triangle")
+            ContentUnavailableView(tr("Przechwycenie nie zawiera klatek", "The capture contains no frames"), systemImage: "exclamationmark.triangle")
         }
     }
 
     /// Says when the log did not deliver every frame of the capture window.
     private var warning: String? {
         if let coverage = capture.coverage, coverage < 0.95 {
-            return "Klatki pokrywają tylko \(Int((coverage * 100).rounded()))% czasu pomiaru — część nie trafiła do logu."
+            let percent = Int((coverage * 100).rounded())
+            return tr("Klatki pokrywają tylko \(percent)% czasu pomiaru — część nie trafiła do logu.",
+                      "The frames cover only \(percent)% of the capture time — some never reached the log.")
         }
         if let missing = capture.missingFrames, missing * 100 >= capture.frameTimes.count {
-            return "Licznik Metal HUD wskazuje o \(missing) klatek więcej, niż było w logu."
+            return tr("Licznik Metal HUD wskazuje więcej klatek, niż było w logu (różnica: \(missing)).",
+                      "The Metal HUD counter reports more frames than the log contained (difference: \(missing)).")
         }
         return nil
     }
@@ -180,7 +274,7 @@ struct CaptureDetailView: View {
     private func header(_ metrics: FrameMetrics) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(capture.processName).font(.title2).bold()
-            Text("\(capture.startedAt.formatted(date: .long, time: .standard)) · \(String(format: "%.1f", metrics.duration)) s · \(metrics.frameCount) klatek")
+            Text("\(formatted(capture.startedAt, date: .long, time: .standard)) · \(String(format: "%.1f", metrics.duration)) s · \(tr("klatki", "frames")): \(metrics.frameCount)")
                 .foregroundStyle(.secondary)
             if let warning {
                 Label(warning, systemImage: "exclamationmark.triangle")
@@ -222,7 +316,7 @@ struct MetricBarChart: View {
 
     var body: some View {
         Chart(items) { item in
-            BarMark(x: .value("FPS", item.value), y: .value("Metryka", item.id), height: .fixed(18))
+            BarMark(x: .value("FPS", item.value), y: .value("Metric", item.id), height: .fixed(18))
                 .clipShape(UnevenRoundedRectangle(bottomTrailingRadius: 4, topTrailingRadius: 4))
                 .annotation(position: .trailing, spacing: 6) {
                     Text(fps(item.value)).font(.callout.weight(.medium)).monospacedDigit()
@@ -266,11 +360,11 @@ struct FrameTimeChart: View {
     var body: some View {
         Chart {
             ForEach(points) { point in
-                LineMark(x: .value("Czas", point.time), y: .value("Czas klatki", point.frameTime))
+                LineMark(x: .value("Time", point.time), y: .value("Frame time", point.frameTime))
                     .lineStyle(StrokeStyle(lineWidth: 1.5))
             }
             if let hovered {
-                RuleMark(x: .value("Czas", hovered.time))
+                RuleMark(x: .value("Time", hovered.time))
                     .foregroundStyle(.secondary.opacity(0.5))
                     .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         Text("\(String(format: "%.2f", hovered.frameTime)) ms · \(fps(1000 / hovered.frameTime)) FPS")
@@ -280,11 +374,11 @@ struct FrameTimeChart: View {
                             .padding(.vertical, 3)
                             .background(.background, in: RoundedRectangle(cornerRadius: 4))
                     }
-                PointMark(x: .value("Czas", hovered.time), y: .value("Czas klatki", hovered.frameTime))
+                PointMark(x: .value("Time", hovered.time), y: .value("Frame time", hovered.frameTime))
                     .symbolSize(40)
             }
         }
-        .chartXAxisLabel("Czas (s)")
+        .chartXAxisLabel(tr("Czas (s)", "Time (s)"))
         .chartYAxisLabel("ms")
         .chartOverlay { proxy in
             GeometryReader { geometry in

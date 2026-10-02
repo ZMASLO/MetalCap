@@ -38,7 +38,13 @@ Stąd dwa tryby pracy:
 
 ### Metal HUD globalnie (wymaga odblokowania logu)
 
-Przełącznik „Metal HUD” ustawia `MTL_HUD_ENABLED=1` i `MTL_HUD_LOG_ENABLED=1` przez `launchctl setenv` dla wszystkich aplikacji uruchomionych od tej chwili (Steam i CrossOver trzeba zrestartować). MetalCap widzi wtedy grę w logu systemowym, ale czasy klatek są ukryte, dopóki dla podsystemu `com.apple.metal.hud` nie zostaną włączone dane prywatne. MetalCap sam tego nie robi.
+Przełącznik „Metal HUD” ustawia `MTL_HUD_ENABLED=1` i `MTL_HUD_LOG_ENABLED=1` przez `launchctl setenv` dla wszystkich aplikacji uruchomionych od tej chwili (Steam i CrossOver trzeba zrestartować). MetalCap widzi wtedy grę w logu systemowym, ale czasy klatek są ukryte, dopóki log nie zostanie odblokowany.
+
+Przy starcie MetalCap sprawdza, czy log jest odblokowany, i jeśli nie — pokazuje monit z wyjaśnieniem. „Odblokuj…” (także w ustawieniach) tworzy plik `/Library/Preferences/Logging/Subsystems/com.apple.metal.hud.plist` z `Enable-Private-Data = true`; macOS pyta przy tym o hasło administratora. Plik odsłania wyłącznie komunikaty Metal HUD. „Zablokuj ponownie” w ustawieniach go usuwa.
+
+## Język
+
+Interfejs jest po polsku i po angielsku. Domyślnie język jest wybierany automatycznie: polski na systemie ustawionym na polski, angielski na każdym innym. W ustawieniach można wymusić jeden z nich; menu systemowe przełączą się po ponownym uruchomieniu aplikacji.
 
 ## Metryki
 

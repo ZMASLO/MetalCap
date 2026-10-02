@@ -8,6 +8,8 @@ swift build -c release
 APP=build/MetalCap.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
+# Empty localization folders make AppKit show its own menus and panels in these languages.
+mkdir -p "$APP/Contents/Resources/en.lproj" "$APP/Contents/Resources/pl.lproj"
 cp .build/release/MetalCap "$APP/Contents/MacOS/MetalCap"
 
 cat > "$APP/Contents/Info.plist" <<'EOF'
@@ -19,6 +21,13 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 	<string>MetalCap</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.metalcap.MetalCap</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>pl</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>MetalCap</string>
 	<key>CFBundlePackageType</key>

@@ -21,12 +21,36 @@ final class AppModel: ObservableObject {
     @Published private(set) var activeProcess: String?
     /// The unified log delivers HUD lines without frame data.
     @Published private(set) var frameDataRedacted = false
+    /// Frame data has been un-redacted in the unified log (see `LogPrivacy`).
+    @Published private(set) var logUnlocked = LogPrivacy.isUnlocked()
+    @Published var showingUnlockPrompt = false
+    @Published var showingSettings = false
     @Published var message: String?
+    @Published private(set) var language = L10n.language
     @Published var hotKey: KeyCombo {
         didSet {
             UserDefaults.standard.set(try? JSONEncoder().encode(hotKey), forKey: "hotKey")
             registerHotKey()
         }
+    }
+    /// "auto", "pl" or "en".
+    @Published var languagePreference = L10n.preference {
+        didSet {
+            let defaults = UserDefaults.standard
+            defaults.set(languagePreference, forKey: L10n.preferenceKey)
+            L10n.language = Language.resolve(preference: languagePreference,
+                                             preferredLanguages: Language.systemLanguages)
+            language = L10n.language
+            // System-provided menus and panels follow this on the next launch.
+            if Language(rawValue: languagePreference) != nil {
+                defaults.set([languagePreference], forKey: "AppleLanguages")
+            } else {
+                defaults.removeObject(forKey: "AppleLanguages")
+            }
+        }
+    }
+    @Published var skipUnlockPrompt = UserDefaults.standard.bool(forKey: "skipUnlockPrompt") {
+        didSet { UserDefaults.standard.set(skipUnlockPrompt, forKey: "skipUnlockPrompt") }
     }
 
     /// How long after "stop" to wait for the HUD line covering the last frames.
@@ -43,6 +67,7 @@ final class AppModel: ObservableObject {
             .flatMap { try? JSONDecoder().decode(KeyCombo.self, from: $0) } ?? .default
         captures = store.loadAll()
         selection = captures.first?.id
+        showingUnlockPrompt = !logUnlocked && !skipUnlockPrompt
 
         GlobalHotKey.shared.onPress = { [weak self] in
             Task { @MainActor in self?.toggleCapture() }
@@ -53,7 +78,8 @@ final class AppModel: ObservableObject {
             Task { @MainActor in self?.handle(event, fromLog: true) }
         }
         do { try logSource.start() } catch {
-            message = "Nie udało się uruchomić odczytu logu: \(error.localizedDescription)"
+            message = tr("Nie udało się uruchomić odczytu logu: ", "Could not start reading the log: ")
+                + error.localizedDescription
         }
 
         Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
@@ -61,6 +87,7 @@ final class AppModel: ObservableObject {
                 guard let self, self.activeProcess != nil,
                       Date().timeIntervalSince(self.lastEventAt) > 3 else { return }
                 self.activeProcess = nil
+                self.frameDataRedacted = false
             }
         }
     }
@@ -71,7 +98,8 @@ final class AppModel: ObservableObject {
 
     private func registerHotKey() {
         if !GlobalHotKey.shared.register(hotKey) {
-            message = "Skrót \(hotKey.display) jest zajęty — wybierz inny w ustawieniach."
+            message = tr("Skrót \(hotKey.display) jest zajęty — wybierz inny w ustawieniach.",
+                         "The shortcut \(hotKey.display) is taken — choose another one in settings.")
         }
     }
 
@@ -81,18 +109,45 @@ final class AppModel: ObservableObject {
         do {
             try HUDEnvironment.setEnabled(enabled)
             message = enabled
-                ? "Metal HUD włączony. Uruchom ponownie grę oraz Steam/CrossOver, żeby zadziałał."
+                ? tr("Metal HUD włączony. Uruchom ponownie grę oraz Steam/CrossOver, żeby zadziałał.",
+                     "Metal HUD is on. Restart the game and Steam/CrossOver for it to take effect.")
                 : nil
         } catch {
-            message = "Nie udało się zmienić ustawienia Metal HUD: \(error.localizedDescription)"
+            message = tr("Nie udało się zmienić ustawienia Metal HUD: ", "Could not change the Metal HUD setting: ")
+                + error.localizedDescription
         }
         hudEnabled = HUDEnvironment.isEnabled
+    }
+
+    /// Installs or removes the logging preference that reveals frame data; macOS asks for an admin password.
+    func setLogUnlocked(_ unlocked: Bool) {
+        let prompt = unlocked
+            ? tr("MetalCap chce odblokować czasy klatek Metal HUD w logu systemowym.",
+                 "MetalCap wants to unlock Metal HUD frame times in the system log.")
+            : tr("MetalCap chce ponownie ukryć czasy klatek Metal HUD w logu systemowym.",
+                 "MetalCap wants to hide Metal HUD frame times in the system log again.")
+        Task.detached {
+            let result = Result { try LogPrivacy.setUnlocked(unlocked, prompt: prompt) }
+            await MainActor.run {
+                self.logUnlocked = LogPrivacy.isUnlocked()
+                switch result {
+                case .success(true) where unlocked:
+                    self.message = tr("Czasy klatek odblokowane. Jeśli gra już działa, uruchom ją ponownie.",
+                                      "Frame times unlocked. If a game is already running, restart it.")
+                case .success:
+                    break
+                case .failure(let error):
+                    self.message = tr("Nie udało się zmienić ustawienia logu: ", "Could not change the log setting: ")
+                        + error.localizedDescription
+                }
+            }
+        }
     }
 
     /// Lets the user pick a game and starts it with the HUD on, reading frame data from its stderr.
     func launchGame() {
         let panel = NSOpenPanel()
-        panel.title = "Wybierz grę"
+        panel.title = tr("Wybierz grę", "Choose a game")
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         panel.canChooseFiles = true
         panel.treatsFilePackagesAsDirectories = false
@@ -106,7 +161,8 @@ final class AppModel: ObservableObject {
         do {
             try source.start()
         } catch {
-            message = "Nie udało się uruchomić \(url.lastPathComponent): \(error.localizedDescription)"
+            message = tr("Nie udało się uruchomić \(url.lastPathComponent): ",
+                         "Could not launch \(url.lastPathComponent): ") + error.localizedDescription
             return
         }
         let pid = source.pid
@@ -122,7 +178,7 @@ final class AppModel: ObservableObject {
         if fromLog {
             // A game we launched is read from stderr; its log entries are duplicates.
             if launched[event.pid] != nil { return }
-            frameDataRedacted = event.sample.isRedacted
+            if frameDataRedacted != event.sample.isRedacted { frameDataRedacted = event.sample.isRedacted }
         }
         lastEventAt = Date()
         if activeProcess != event.processName { activeProcess = event.processName }
@@ -153,14 +209,17 @@ final class AppModel: ObservableObject {
         guard let capture = recorder.finish() else {
             Sounds.failure()
             message = frameDataRedacted
-                ? "Brak klatek: macOS ukrywa czasy klatek w logu systemowym. Uruchom grę przez „Uruchom grę przez MetalCap…”."
-                : "Brak klatek: żadna gra nie logowała w tym czasie. Sprawdź, czy Metal HUD jest włączony i widoczny."
+                ? tr("Brak klatek: macOS ukrywa czasy klatek tej gry w logu systemowym.",
+                     "No frames: macOS hides this game's frame times in the system log.")
+                : tr("Brak klatek: żadna gra nie logowała w tym czasie. Sprawdź, czy Metal HUD jest włączony i widoczny.",
+                     "No frames: no game was logging during the capture. Check that Metal HUD is on and visible.")
             return
         }
         do {
             try store.save(capture)
         } catch {
-            message = "Nie udało się zapisać przechwycenia: \(error.localizedDescription)"
+            message = tr("Nie udało się zapisać przechwycenia: ", "Could not save the capture: ")
+                + error.localizedDescription
         }
         captures.insert(capture, at: 0)
         selection = capture.id

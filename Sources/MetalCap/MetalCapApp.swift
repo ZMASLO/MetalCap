@@ -6,9 +6,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Needed when run as a bare executable (`swift run`) rather than from the .app bundle.
         NSApp.setActivationPolicy(.regular)
 
-        // `--snapshot <png> [--size WxH]` renders the main window to a file and quits (for UI checks).
+        // `--snapshot <png> [--size WxH] [--show settings|unlock] [--lang pl|en]` renders the main
+        // window, or the requested sheet, to a file and quits (for UI checks).
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: "--snapshot"), index + 1 < arguments.count {
+            let sheet = arguments.firstIndex(of: "--show").flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
+            AppModel.shared.showingUnlockPrompt = sheet == "unlock"
+            AppModel.shared.showingSettings = sheet == "settings"
             let size = arguments.firstIndex(of: "--size")
                 .flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1].split(separator: "x").compactMap { Double($0) } : nil }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
@@ -18,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.activate(ignoringOtherApps: true)
                 window.makeKeyAndOrderFront(nil)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    guard let view = window.contentView?.superview,
+                    guard let view = (window.attachedSheet ?? window).contentView?.superview,
                           let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { exit(1) }
                     view.cacheDisplay(in: view.bounds, to: bitmap)
                     try? bitmap.representation(using: .png, properties: [:])?
@@ -41,12 +45,13 @@ struct MetalCapApp: App {
     var body: some Scene {
         Window("MetalCap", id: "main") {
             MainView()
+                .id(model.language)
                 .environmentObject(model)
                 .frame(minWidth: 760, minHeight: 480)
         }
 
         MenuBarExtra {
-            MenuContent().environmentObject(model)
+            MenuContent().id(model.language).environmentObject(model)
         } label: {
             Image(systemName: model.isRecording ? "record.circle.fill" : "speedometer")
         }
@@ -58,26 +63,27 @@ struct MenuContent: View {
     @Environment(\.openWindow) private var openWindow
 
     private var status: String {
-        if model.isRecording { return "Nagrywanie…" }
-        if model.isFinishing { return "Zapisywanie…" }
-        if let process = model.activeProcess { return "Wykryto: \(process)" }
-        return "Nie wykryto gry z Metal HUD"
+        if model.isRecording { return tr("Nagrywanie…", "Recording…") }
+        if model.isFinishing { return tr("Zapisywanie…", "Saving…") }
+        if let process = model.activeProcess { return tr("Wykryto: \(process)", "Detected: \(process)") }
+        return tr("Nie wykryto gry z Metal HUD", "No game with Metal HUD detected")
     }
 
     var body: some View {
         Text(status)
-        Button("\(model.isRecording ? "Zatrzymaj" : "Rozpocznij") przechwytywanie (\(model.hotKey.display))") {
+        Button((model.isRecording ? tr("Zatrzymaj przechwytywanie", "Stop capture") : tr("Rozpocznij przechwytywanie", "Start capture"))
+               + " (\(model.hotKey.display))") {
             model.toggleCapture()
         }
         .disabled(model.isFinishing)
         Divider()
-        Toggle("Metal HUD (globalnie)", isOn: Binding(get: { model.hudEnabled }, set: model.setHUDEnabled))
-        Button("Uruchom grę przez MetalCap…") { model.launchGame() }
+        Toggle(tr("Metal HUD (globalnie)", "Metal HUD (system-wide)"), isOn: Binding(get: { model.hudEnabled }, set: model.setHUDEnabled))
+        Button(tr("Uruchom grę przez MetalCap…", "Launch game through MetalCap…")) { model.launchGame() }
         Divider()
-        Button("Pokaż przechwycenia") {
+        Button(tr("Pokaż przechwycenia", "Show captures")) {
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
         }
-        Button("Zakończ MetalCap") { NSApp.terminate(nil) }
+        Button(tr("Zakończ MetalCap", "Quit MetalCap")) { NSApp.terminate(nil) }
     }
 }

@@ -92,7 +92,7 @@ struct HotKeyRecorder: View {
     @ViewState private var monitor: Any?
 
     var body: some View {
-        Button(monitor == nil ? combo.display : "Naciśnij skrót…") {
+        Button(monitor == nil ? combo.display : tr("Naciśnij skrót…", "Press a shortcut…")) {
             monitor == nil ? begin() : end()
         }
         .onDisappear(perform: end)
