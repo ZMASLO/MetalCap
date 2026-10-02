@@ -40,7 +40,13 @@ Stąd dwa tryby pracy:
 
 Przełącznik „Metal HUD” ustawia `MTL_HUD_ENABLED=1` i `MTL_HUD_LOG_ENABLED=1` przez `launchctl setenv` dla wszystkich aplikacji uruchomionych od tej chwili (Steam i CrossOver trzeba zrestartować). MetalCap widzi wtedy grę w logu systemowym, ale czasy klatek są ukryte, dopóki log nie zostanie odblokowany.
 
-Przy starcie MetalCap sprawdza, czy log jest odblokowany, i jeśli nie — pokazuje monit z wyjaśnieniem. „Odblokuj…” (także w ustawieniach) tworzy plik `/Library/Preferences/Logging/Subsystems/com.apple.metal.hud.plist` z `Enable-Private-Data = true`; macOS pyta przy tym o hasło administratora. Plik odsłania wyłącznie komunikaty Metal HUD. „Zablokuj ponownie” w ustawieniach go usuwa.
+Przy starcie MetalCap sprawdza, czy log jest odblokowany, i jeśli nie — pokazuje instrukcję. Odblokowanie to profil konfiguracyjny z ładunkiem `com.apple.system.logging`, który włącza `Enable-Private-Data` wyłącznie dla podsystemu `com.apple.metal.hud`:
+
+1. „Zainstaluj profil…” (w monicie albo w ustawieniach) zapisuje `MetalCap-FrameTimes.mobileconfig` w Pobranych, przekazuje go systemowi i otwiera Ustawienia systemowe.
+2. W Ustawieniach systemowych: Ogólne → Zarządzanie urządzeniem → dwuklik na „MetalCap – czasy klatek” → Zainstaluj. Profil jest niepodpisany, macOS zapyta o hasło.
+3. Uruchom ponownie grę; zmiana może zacząć działać po minucie lub dwóch.
+
+Profil usuwa się w tym samym miejscu Ustawień systemowych. Bezpośredni zapis pliku w `/Library/Preferences/Logging/Subsystems/` nie wchodzi w grę: macOS 27 odrzuca go nawet z uprawnieniami administratora.
 
 ## Język
 

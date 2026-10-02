@@ -183,19 +183,49 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
 }
 
 @Suite struct LogPrivacyTests {
-    @Test func preferenceFileRoundTrip() throws {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("MetalCapTests-\(UUID().uuidString).plist")
-        defer { try? FileManager.default.removeItem(at: url) }
-        #expect(LogPrivacy.isUnlocked(at: url) == false)
-        try LogPrivacy.preferenceData().write(to: url)
-        #expect(LogPrivacy.isUnlocked(at: url))
-
-        try Data("<plist version=\"1.0\"><dict/></plist>".utf8).write(to: url)
-        #expect(LogPrivacy.isUnlocked(at: url) == false)
+    private func temporaryURL() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("MetalCapTests-\(UUID().uuidString).plist")
     }
 
-    @Test func escapesAppleScriptStrings() {
-        #expect(LogPrivacy.appleScriptLiteral(#"a "b" \c"#) == #""a \"b\" \\c""#)
+    private func write(_ propertyList: [String: Any], to url: URL) throws {
+        try PropertyListSerialization.data(fromPropertyList: propertyList, format: .xml, options: 0).write(to: url)
+    }
+
+    @Test func profileEnablesPrivateDataForTheHUDSubsystemOnly() throws {
+        let data = LogPrivacy.profileData(displayName: "Name", description: "Why")
+        let profile = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        #expect(profile["PayloadType"] as? String == "Configuration")
+        #expect(profile["PayloadIdentifier"] as? String == LogPrivacy.profileIdentifier)
+        #expect(profile["PayloadDisplayName"] as? String == "Name")
+
+        let payloads = try #require(profile["PayloadContent"] as? [[String: Any]])
+        #expect(payloads.count == 1)
+        #expect(payloads[0]["PayloadType"] as? String == "com.apple.system.logging")
+        #expect(payloads[0]["System"] == nil)
+        let subsystems = try #require(payloads[0]["Subsystems"] as? [String: [String: [String: Bool]]])
+        #expect(subsystems == ["com.apple.metal.hud": ["DEFAULT-OPTIONS": ["Enable-Private-Data": true]]])
+    }
+
+    @Test func recognizesPreferenceFile() throws {
+        let preference = temporaryURL(), managed = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: preference) }
+        #expect(LogPrivacy.isUnlocked(preferenceURL: preference, managedPreferenceURL: managed) == false)
+
+        try write(["DEFAULT-OPTIONS": ["Enable-Private-Data": true]], to: preference)
+        #expect(LogPrivacy.isUnlocked(preferenceURL: preference, managedPreferenceURL: managed))
+
+        try write(["DEFAULT-OPTIONS": ["Enable-Private-Data": false]], to: preference)
+        #expect(LogPrivacy.isUnlocked(preferenceURL: preference, managedPreferenceURL: managed) == false)
+    }
+
+    @Test func recognizesInstalledProfile() throws {
+        let preference = temporaryURL(), managed = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: managed) }
+
+        try write(["Subsystems": ["com.example.other": ["DEFAULT-OPTIONS": ["Enable-Private-Data": true]]]], to: managed)
+        #expect(LogPrivacy.isUnlocked(preferenceURL: preference, managedPreferenceURL: managed) == false)
+
+        try write(["Subsystems": ["com.apple.metal.hud": ["DEFAULT-OPTIONS": ["Enable-Private-Data": true]]]], to: managed)
+        #expect(LogPrivacy.isUnlocked(preferenceURL: preference, managedPreferenceURL: managed))
     }
 }

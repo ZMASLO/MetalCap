@@ -36,8 +36,8 @@ struct MainView: View {
                 if model.frameDataRedacted {
                     HStack {
                         Label(model.logUnlocked
-                              ? tr("Log nadal ukrywa czasy klatek tej gry. Uruchom ją ponownie; jeśli to nie pomoże, odblokowanie nie działa na tej wersji macOS.",
-                                   "The log still hides this game's frame times. Restart the game; if that does not help, unlocking does not work on this macOS version.")
+                              ? tr("Log nadal ukrywa czasy klatek tej gry. Uruchom ją ponownie i odczekaj chwilę; jeśli to nie pomoże, profil nie działa na tej wersji macOS.",
+                                   "The log still hides this game's frame times. Restart the game and wait a moment; if that does not help, the profile does not work on this macOS version.")
                               : tr("macOS ukrywa czasy klatek tej gry, więc pomiar będzie pusty.",
                                    "macOS hides this game's frame times, so a capture would be empty."),
                               systemImage: "eye.slash")
@@ -125,8 +125,10 @@ struct SettingsView: View {
                     HStack {
                         Text(model.logUnlocked ? tr("Odblokowane", "Unlocked") : tr("Ukryte", "Hidden"))
                             .foregroundStyle(.secondary)
-                        Button(model.logUnlocked ? tr("Zablokuj ponownie…", "Lock again…") : tr("Odblokuj…", "Unlock…")) {
-                            model.setLogUnlocked(!model.logUnlocked)
+                        if model.logUnlocked {
+                            Button(tr("Usuń profil…", "Remove profile…")) { model.openProfileSettings() }
+                        } else {
+                            Button(tr("Zainstaluj profil…", "Install profile…")) { model.installUnlockProfile() }
                         }
                     }
                 }
@@ -145,19 +147,20 @@ struct SettingsView: View {
     }
 }
 
-/// Shown at launch while the unified log still hides frame data: explains why unlocking is needed.
+/// Shown at launch while the unified log still hides frame data: explains why a profile is
+/// needed and walks through installing it.
 struct UnlockPromptView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
-    private var points: [String] {
+    private var steps: [String] {
         [
-            tr("Powstanie jeden plik: \(LogPrivacy.preferenceURL.path)",
-               "One file is created: \(LogPrivacy.preferenceURL.path)"),
-            tr("Odsłania on wyłącznie komunikaty Metal HUD, czyli numery i czasy klatek. Reszta logu pozostaje ukryta.",
-               "It reveals only Metal HUD messages, i.e. frame numbers and frame times. The rest of the log stays hidden."),
-            tr("macOS poprosi o hasło administratora.", "macOS will ask for an administrator password."),
-            tr("Możesz to cofnąć w ustawieniach MetalCap.", "You can undo this in MetalCap's settings."),
+            tr("Kliknij „Zainstaluj profil…”. MetalCap przekaże profil systemowi i otworzy Ustawienia systemowe.",
+               "Click “Install profile…”. MetalCap hands the profile to macOS and opens System Settings."),
+            tr("W Ustawieniach systemowych wejdź w Ogólne → Zarządzanie urządzeniem, kliknij dwukrotnie „MetalCap – czasy klatek” i wybierz Zainstaluj. macOS zapyta o hasło i oznaczy profil jako niepodpisany.",
+               "In System Settings go to General → Device Management, double-click “MetalCap – frame times” and choose Install. macOS asks for your password and marks the profile as unsigned."),
+            tr("Uruchom ponownie grę. Zmiana może zacząć działać po minucie lub dwóch.",
+               "Restart the game. The change can take a minute or two to apply."),
         ]
     }
 
@@ -168,12 +171,15 @@ struct UnlockPromptView: View {
             Text(tr("macOS ukrywa czasy klatek Metal HUD w logu systemowym. Dlatego MetalCap mierzy teraz tylko gry uruchomione przyciskiem „Uruchom grę…”, a gry ze Steam, CrossOver i innych launcherów pozostają niewidoczne.",
                     "macOS hides Metal HUD frame times in the system log. That is why MetalCap can currently measure only games started with “Launch game…”, while games from Steam, CrossOver and other launchers stay invisible."))
                 .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(tr("Co się zmieni", "What changes")).font(.headline)
-                ForEach(points, id: \.self) { point in
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("•")
-                        Text(point).fixedSize(horizontal: false, vertical: true)
+            Text(tr("Odsłania je profil konfiguracyjny. Dotyczy on wyłącznie komunikatów Metal HUD, czyli numerów i czasów klatek; reszta logu pozostaje ukryta. Usuniesz go w tym samym miejscu Ustawień systemowych.",
+                    "A configuration profile reveals them. It covers only Metal HUD messages, i.e. frame numbers and frame times; the rest of the log stays hidden. You can remove it in the same place in System Settings."))
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(tr("Jak to włączyć", "How to turn it on")).font(.headline)
+                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("\(index + 1).").monospacedDigit().foregroundStyle(.secondary)
+                        Text(step).fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -181,16 +187,16 @@ struct UnlockPromptView: View {
                 Toggle(tr("Nie pokazuj ponownie", "Don't show again"), isOn: $model.skipUnlockPrompt)
                 Spacer()
                 Button(tr("Nie teraz", "Not now")) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(tr("Odblokuj…", "Unlock…")) {
+                Button(tr("Zainstaluj profil…", "Install profile…")) {
                     dismiss()
-                    model.setLogUnlocked(true)
+                    model.installUnlockProfile()
                 }
                 .keyboardShortcut(.defaultAction)
             }
             .padding(.top, 4)
         }
         .padding(22)
-        .frame(width: 520)
+        .frame(width: 540)
     }
 }
 

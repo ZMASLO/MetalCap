@@ -22,7 +22,7 @@ final class AppModel: ObservableObject {
     /// The unified log delivers HUD lines without frame data.
     @Published private(set) var frameDataRedacted = false
     /// Frame data has been un-redacted in the unified log (see `LogPrivacy`).
-    @Published private(set) var logUnlocked = LogPrivacy.isUnlocked()
+    @Published private(set) var logUnlocked = AppModel.readLogUnlocked()
     @Published var showingUnlockPrompt = false
     @Published var showingSettings = false
     @Published var message: String?
@@ -51,6 +51,13 @@ final class AppModel: ObservableObject {
     }
     @Published var skipUnlockPrompt = UserDefaults.standard.bool(forKey: "skipUnlockPrompt") {
         didSet { UserDefaults.standard.set(skipUnlockPrompt, forKey: "skipUnlockPrompt") }
+    }
+
+    /// Set once unredacted frames have actually arrived through the log, whatever installed the configuration.
+    private static let unlockVerifiedKey = "logUnlockVerified"
+
+    private static func readLogUnlocked() -> Bool {
+        LogPrivacy.isUnlocked() || UserDefaults.standard.bool(forKey: unlockVerifiedKey)
     }
 
     /// How long after "stop" to wait for the HUD line covering the last frames.
@@ -84,8 +91,11 @@ final class AppModel: ObservableObject {
 
         Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, self.activeProcess != nil,
-                      Date().timeIntervalSince(self.lastEventAt) > 3 else { return }
+                guard let self else { return }
+                // Picks up a profile installed or removed in System Settings.
+                let unlocked = Self.readLogUnlocked()
+                if self.logUnlocked != unlocked { self.logUnlocked = unlocked }
+                guard self.activeProcess != nil, Date().timeIntervalSince(self.lastEventAt) > 3 else { return }
                 self.activeProcess = nil
                 self.frameDataRedacted = false
             }
@@ -119,28 +129,30 @@ final class AppModel: ObservableObject {
         hudEnabled = HUDEnvironment.isEnabled
     }
 
-    /// Installs or removes the logging preference that reveals frame data; macOS asks for an admin password.
-    func setLogUnlocked(_ unlocked: Bool) {
-        let prompt = unlocked
-            ? tr("MetalCap chce odblokować czasy klatek Metal HUD w logu systemowym.",
-                 "MetalCap wants to unlock Metal HUD frame times in the system log.")
-            : tr("MetalCap chce ponownie ukryć czasy klatek Metal HUD w logu systemowym.",
-                 "MetalCap wants to hide Metal HUD frame times in the system log again.")
-        Task.detached {
-            let result = Result { try LogPrivacy.setUnlocked(unlocked, prompt: prompt) }
-            await MainActor.run {
-                self.logUnlocked = LogPrivacy.isUnlocked()
-                switch result {
-                case .success(true) where unlocked:
-                    self.message = tr("Czasy klatek odblokowane. Jeśli gra już działa, uruchom ją ponownie.",
-                                      "Frame times unlocked. If a game is already running, restart it.")
-                case .success:
-                    break
-                case .failure(let error):
-                    self.message = tr("Nie udało się zmienić ustawienia logu: ", "Could not change the log setting: ")
-                        + error.localizedDescription
-                }
-            }
+    /// Hands the logging profile to macOS and opens the System Settings pane where the user installs it.
+    func installUnlockProfile() {
+        let url = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MetalCap-FrameTimes.mobileconfig")
+        let profile = LogPrivacy.profileData(
+            displayName: tr("MetalCap – czasy klatek", "MetalCap – frame times"),
+            description: tr("Odsłania czasy klatek Metal HUD w logu systemowym, żeby MetalCap mógł mierzyć każdą grę.",
+                            "Reveals Metal HUD frame times in the system log so MetalCap can measure any game."))
+        do {
+            try profile.write(to: url, options: .atomic)
+        } catch {
+            message = tr("Nie udało się zapisać profilu: ", "Could not save the profile: ") + error.localizedDescription
+            return
+        }
+        NSWorkspace.shared.open(url)
+        openProfileSettings()
+        message = tr("Profil czeka w Ustawieniach systemowych: Ogólne → Zarządzanie urządzeniem. Po instalacji uruchom ponownie grę.",
+                     "The profile is waiting in System Settings: General → Device Management. After installing it, restart the game.")
+    }
+
+    /// Opens the System Settings pane that lists configuration profiles, where the profile can be removed.
+    func openProfileSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Profiles-Settings.extension") {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -179,6 +191,13 @@ final class AppModel: ObservableObject {
             // A game we launched is read from stderr; its log entries are duplicates.
             if launched[event.pid] != nil { return }
             if frameDataRedacted != event.sample.isRedacted { frameDataRedacted = event.sample.isRedacted }
+            // Frames arriving through the log are the proof that unlocking works; redacted lines disprove it.
+            if event.sample.isRedacted || !event.sample.frames.isEmpty {
+                let verified = !event.sample.isRedacted
+                if UserDefaults.standard.bool(forKey: Self.unlockVerifiedKey) != verified {
+                    UserDefaults.standard.set(verified, forKey: Self.unlockVerifiedKey)
+                }
+            }
         }
         lastEventAt = Date()
         if activeProcess != event.processName { activeProcess = event.processName }
