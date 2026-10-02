@@ -4,6 +4,27 @@ import MetalCapCore
 // `MetalCap --run <app or executable> [--seconds N]` benchmarks headlessly:
 // launches the target with the HUD on, records for N seconds and prints the metrics.
 let arguments = CommandLine.arguments
+
+// `MetalCap --sample <seconds>` prints one line of system readings per second,
+// for checking the sampler against tools such as mactop.
+if let sampleIndex = arguments.firstIndex(of: "--sample") {
+    let seconds = sampleIndex + 1 < arguments.count ? Int(arguments[sampleIndex + 1]) ?? 5 : 5
+    let sampler = SystemSampler()
+    _ = sampler.read(pids: [])
+    let formatter = ISO8601DateFormatter()
+    for _ in 0..<seconds {
+        Thread.sleep(forTimeInterval: 1)
+        let sample = sampler.read(pids: []).sample
+        func show(_ value: Double?) -> String { value.map { String(format: "%.2f", $0) } ?? "null" }
+        print("{\"time\":\"\(formatter.string(from: Date()))\",\"cpu_temp_avg\":\(show(sample.cpuTemperatureAverage)),"
+              + "\"cpu_temp_max\":\(show(sample.cpuTemperature)),\"gpu_temp_avg\":\(show(sample.gpuTemperatureAverage)),"
+              + "\"gpu_temp_max\":\(show(sample.gpuTemperature)),\"cpu_power\":\(show(sample.cpuPower)),"
+              + "\"gpu_power\":\(show(sample.gpuPower)),\"system_power\":\(show(sample.systemPower)),"
+              + "\"gpu_usage\":\(show(sample.gpuUtilization)),\"cpu_usage\":\(show(sample.cpuUsage))}")
+        fflush(stdout)
+    }
+    exit(0)
+}
 if let runIndex = arguments.firstIndex(of: "--run"), runIndex + 1 < arguments.count {
     let seconds = arguments.firstIndex(of: "--seconds")
         .flatMap { $0 + 1 < arguments.count ? Double(arguments[$0 + 1]) : nil } ?? 10
@@ -43,7 +64,11 @@ if let runIndex = arguments.firstIndex(of: "--run"), runIndex + 1 < arguments.co
                 }
                 print("System (\(system.count) samples): " + [
                     describe("GPU", \.gpuUtilization, "%.0f%%"), describe("GPU mem", \.gpuMemory, "%.0f MB"),
-                    describe("CPU temp", \.cpuTemperature, "%.0f°C"), describe("GPU temp", \.gpuTemperature, "%.0f°C"),
+                    describe("CPU temp", \.cpuTemperatureAverage, "%.0f°C"), describe("GPU temp", \.gpuTemperatureAverage, "%.0f°C"),
+                ].joined(separator: " | "))
+                print("                     " + [
+                    describe("CPU power", \.cpuPower, "%.1f W"), describe("GPU power", \.gpuPower, "%.1f W"),
+                    describe("Mac power", \.systemPower, "%.1f W"),
                 ].joined(separator: " | "))
                 print("                     " + [
                     describe("CPU all", \.cpuUsage, "%.0f%%"), describe("game CPU", \.processCPU, "%.0f%%"),

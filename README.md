@@ -34,11 +34,16 @@ HUD musi być widoczny podczas pomiaru: po ukryciu (⇧F9) macOS przestaje aktua
 W trakcie pomiaru MetalCap raz na sekundę zapisuje stan systemu i pokazuje go w sekcji „System” pod wykresem czasu klatki:
 
 - **Obciążenie i pamięć GPU** — ze statystyk sterownika GPU w rejestrze systemowym.
-- **Temperatura CPU i GPU** — najcieplejszy czujnik z kluczy SMC `Tp…` (rdzenie CPU) i `Tg…` (GPU). Nazwy kluczy są nieudokumentowane i wykrywane przy starcie.
+- **Temperatura CPU i GPU** — klucze SMC `Tp…`, `Te…`, `Ts…` (rdzenie CPU) i `Tg…` (GPU), ten sam dobór co w mactop. Wykres pokazuje średnią z czujników, kafelek szczyt najcieplejszego. Nazwy kluczy są nieudokumentowane i wykrywane przy starcie.
+- **Moc GPU** — licznik energii „GPU Energy” z IOReport.
+- **Moc CPU** — licznik „CPU Energy”; na macOS 27 zwraca on zero, więc moc jest szacowana z histogramów mocy klastrów (grupy PMP), tak jak robi to mactop.
+- **Moc całego Maca** — klucz SMC `PSTR` (zapasowo `PDTR`, `PD0R`); z niej liczony jest wskaźnik „FPS na wat”.
 - **CPU i RAM gry** — czas procesora i zajętość pamięci procesu, z którego pochodzą klatki.
 - **Stan termiczny**, zasilanie z baterii i tryb niskiego zużycia energii — jako uwagi w nagłówku wyniku.
 
 Nic z tego nie wymaga uprawnień administratora. Wyniki zapisane wcześniej nie mają tej sekcji.
+
+Odczyty były porównane z mactop 2.1.6 na MacBooku Pro M5 Pro (macOS 27.0.1), w spoczynku i przy obciążeniu CPU: temperatury zgodne do 0,8°C, moc CPU do 2%, moc całego Maca poniżej 1%. `MetalCap --sample 10` wypisuje odczyty co sekundę, żeby takie porównanie dało się powtórzyć.
 
 ## Nakładka HUD
 

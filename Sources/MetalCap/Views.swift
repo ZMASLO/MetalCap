@@ -413,7 +413,7 @@ struct CaptureDetailView: View {
                             .frame(minHeight: 240, maxHeight: .infinity)
                     }
                     if let system = capture.system, !system.isEmpty {
-                        SystemSectionView(samples: system, duration: metrics.duration)
+                        SystemSectionView(samples: system, duration: metrics.duration, averageFPS: metrics.average)
                     }
                 }
                 .padding(20)
@@ -582,6 +582,8 @@ struct MetricTile: View {
 struct SystemSectionView: View {
     let samples: [SystemSample]
     let duration: Double
+    /// Average frame rate of the capture, for the frames-per-watt figure.
+    let averageFPS: Double
 
     private static func megabytes(_ value: Double) -> String {
         value >= 1024 ? String(format: "%.1f GB", value / 1024) : String(format: "%.0f MB", value)
@@ -594,6 +596,23 @@ struct SystemSectionView: View {
 
     private static func percent(_ value: Double) -> String { String(format: "%.0f%%", value) }
     private static func degrees(_ value: Double) -> String { String(format: "%.0f°C", value) }
+    private static func watts(_ value: Double) -> String { String(format: value < 10 ? "%.1f W" : "%.0f W", value) }
+
+    /// Temperature tile: the peak of the hottest sensor, with the mean across sensors underneath.
+    private func temperatureTile(_ title: String, hottest: KeyPath<SystemSample, Double?>,
+                                 average: KeyPath<SystemSample, Double?>) -> InfoTile? {
+        guard let peak = samples.range(of: hottest)?.maximum else { return nil }
+        let mean = samples.range(of: average)?.average
+        return InfoTile(title: title, value: Self.degrees(peak),
+                        detail: mean.map { "\(tr("maks., średnio", "peak, average")) \(Self.degrees($0))" }
+                            ?? tr("maksimum", "peak"))
+    }
+
+    /// Mean of the sensors where it was recorded, otherwise the hottest sensor (older captures).
+    private func temperatureSeries(_ name: String, average: KeyPath<SystemSample, Double?>,
+                                   hottest: KeyPath<SystemSample, Double?>) -> TimeSeriesChart.Series? {
+        series(name, average) ?? series(name, hottest)
+    }
 
     private func series(_ name: String, _ metric: KeyPath<SystemSample, Double?>) -> TimeSeriesChart.Series? {
         let points = samples.compactMap { sample in
@@ -622,20 +641,38 @@ struct SystemSectionView: View {
     var body: some View {
         let tiles = [
             tile(tr("Obciążenie GPU", "GPU load"), \.gpuUtilization, format: Self.percent),
-            tile(tr("Temperatura CPU", "CPU temperature"), \.cpuTemperature, format: Self.degrees, peakOnly: true),
-            tile(tr("Temperatura GPU", "GPU temperature"), \.gpuTemperature, format: Self.degrees, peakOnly: true),
+            temperatureTile(tr("Temperatura CPU", "CPU temperature"), hottest: \.cpuTemperature, average: \.cpuTemperatureAverage),
+            temperatureTile(tr("Temperatura GPU", "GPU temperature"), hottest: \.gpuTemperature, average: \.gpuTemperatureAverage),
             tile(tr("RAM gry", "Game RAM"), \.processMemory, format: Self.megabytes, peakOnly: true),
             tile(tr("CPU gry", "Game CPU"), \.processCPU, format: Self.percent),
             InfoTile(title: tr("Stan termiczny", "Thermal state"), value: thermalStateName,
                      detail: tr("najgorszy", "worst")),
         ].compactMap { $0 }
+        let wholeMac = samples.range(of: \.systemPower)
+        let powerTiles = [
+            tile(tr("Moc CPU", "CPU power"), \.cpuPower, format: Self.watts),
+            tile(tr("Moc GPU", "GPU power"), \.gpuPower, format: Self.watts),
+            tile(tr("Moc całego Maca", "Whole-Mac power"), \.systemPower, format: Self.watts),
+            wholeMac.flatMap { range in
+                range.average > 0 && averageFPS.isFinite
+                    ? InfoTile(title: tr("FPS na wat", "FPS per watt"),
+                               value: String(format: "%.2f", averageFPS / range.average),
+                               detail: tr("średnie FPS / moc Maca", "average FPS / Mac power"))
+                    : nil
+            },
+        ].compactMap { $0 }
+        let power = [series("CPU", \.cpuPower), series("GPU", \.gpuPower),
+                     series(tr("Cały Mac", "Whole Mac"), \.systemPower)].compactMap { $0 }
         let memory = [series(tr("Gra", "Game"), \.processMemory), series("GPU", \.gpuMemory)].compactMap { $0 }
         let gameCPU = [series("CPU", \.processCPU)].compactMap { $0 }
         // A nil range lets the chart fit the data; temperatures read better without a zero baseline.
         let charts: [(title: String, series: [TimeSeriesChart.Series], range: ClosedRange<Double>?, format: (Double) -> String)] = [
             (tr("Obciążenie GPU (%)", "GPU load (%)"), [series("GPU", \.gpuUtilization)].compactMap { $0 }, 0...100, Self.percent),
             (tr("Temperatura (°C)", "Temperature (°C)"),
-             [series("CPU", \.cpuTemperature), series("GPU", \.gpuTemperature)].compactMap { $0 }, nil, Self.degrees),
+             [temperatureSeries("CPU", average: \.cpuTemperatureAverage, hottest: \.cpuTemperature),
+              temperatureSeries("GPU", average: \.gpuTemperatureAverage, hottest: \.gpuTemperature)].compactMap { $0 },
+             nil, Self.degrees),
+            (tr("Moc (W)", "Power (W)"), power, Self.fromZero(power), Self.watts),
             (tr("Pamięć (MB)", "Memory (MB)"), memory, Self.fromZero(memory), Self.megabytes),
             (tr("CPU gry (% jednego rdzenia)", "Game CPU (% of one core)"), gameCPU, Self.fromZero(gameCPU), Self.percent),
         ].filter { !$0.series.isEmpty }
@@ -644,6 +681,16 @@ struct SystemSectionView: View {
             Text("System").font(.headline)
             HStack(spacing: 12) {
                 ForEach(tiles.indices, id: \.self) { tiles[$0] }
+            }
+            if !powerTiles.isEmpty {
+                HStack(spacing: 12) {
+                    ForEach(powerTiles.indices, id: \.self) { powerTiles[$0] }
+                }
+                Text(tr("Moc CPU jest szacowana z histogramów mocy klastrów, bo macOS nie udostępnia licznika energii CPU. Temperatury na wykresie to średnia z czujników.",
+                        "CPU power is estimated from per-cluster power histograms, because macOS does not expose the CPU energy counter. Chart temperatures are the mean across sensors."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 20), GridItem(.flexible())], alignment: .leading, spacing: 16) {
                 ForEach(charts.indices, id: \.self) { index in
@@ -697,6 +744,17 @@ struct TimeSeriesChart: View {
     let format: (Double) -> String
     @ViewState private var hoverTime: Double?
 
+    /// Categorical colours in a fixed order, with separate steps for light and dark appearance.
+    private static let seriesColors: [Color] = [
+        (0x2A78D6, 0x3987E5), (0xEB6834, 0xD95926), (0x1BAF7A, 0x199E70),
+    ].map { light, dark in
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let hex = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+            return NSColor(srgbRed: CGFloat(hex >> 16 & 0xFF) / 255, green: CGFloat(hex >> 8 & 0xFF) / 255,
+                           blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+        })
+    }
+
     private var fittedRange: ClosedRange<Double> {
         let values = series.flatMap { $0.points.map(\.value) }
         guard let low = values.min(), let high = values.max() else { return 0...1 }
@@ -736,7 +794,7 @@ struct TimeSeriesChart: View {
                     }
             }
         }
-        .chartForegroundStyleScale(domain: series.map(\.id), range: [Color.blue, Color.orange])
+        .chartForegroundStyleScale(domain: series.map(\.id), range: Self.seriesColors)
         .chartLegend(series.count > 1 ? .visible : .hidden)
         .chartXScale(domain: 0...max(duration, 1))
         .chartYScale(domain: range ?? fittedRange)

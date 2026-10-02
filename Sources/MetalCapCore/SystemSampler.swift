@@ -14,6 +14,16 @@ public struct SystemSample: Codable, Equatable, Sendable {
     public var cpuTemperature: Double?
     /// Hottest GPU sensor, in °C.
     public var gpuTemperature: Double?
+    /// Mean of the CPU core sensors, in °C. This is the figure tools such as mactop report.
+    public var cpuTemperatureAverage: Double?
+    /// Mean of the GPU sensors, in °C.
+    public var gpuTemperatureAverage: Double?
+    /// CPU power in watts. On macOS 27 an estimate from per-cluster power histograms.
+    public var cpuPower: Double?
+    /// GPU power in watts.
+    public var gpuPower: Double?
+    /// Power drawn by the whole Mac, in watts.
+    public var systemPower: Double?
     /// CPU load across all cores in percent (100 = every core busy).
     public var cpuUsage: Double?
     /// CPU used by the game in percent of one core (can exceed 100).
@@ -79,6 +89,7 @@ public struct SystemReading: Sendable {
 /// Rates (CPU use) are measured between consecutive calls to `read`, so call it at a steady interval.
 public final class SystemSampler {
     private let smc = SMCReader()
+    private let power = PowerReader()
     private var previousCPUTicks: (busy: Double, total: Double)?
     private var previousProcessTime: [Int32: (cpuSeconds: Double, date: Date)] = [:]
 
@@ -95,8 +106,14 @@ public final class SystemSampler {
         var sample = SystemSample(time: 0)
         sample.gpuUtilization = gpu?.utilization
         sample.gpuMemory = gpu?.memory
-        sample.cpuTemperature = temperatures?.cpu
-        sample.gpuTemperature = temperatures?.gpu
+        sample.cpuTemperature = temperatures?.cpu?.maximum
+        sample.gpuTemperature = temperatures?.gpu?.maximum
+        sample.cpuTemperatureAverage = temperatures?.cpu?.average
+        sample.gpuTemperatureAverage = temperatures?.gpu?.average
+        let watts = power?.read(at: date)
+        sample.cpuPower = watts?.cpu
+        sample.gpuPower = watts?.gpu
+        sample.systemPower = smc?.systemPower()
         sample.cpuUsage = cpuUsage()
         sample.systemMemory = Self.systemMemory()
         sample.thermalState = ProcessInfo.processInfo.thermalState.rawValue
@@ -190,8 +207,9 @@ public final class SystemSampler {
 
 /// Reads temperature sensors from the System Management Controller.
 ///
-/// The key names are undocumented. On Apple silicon `Tp…` keys are CPU core sensors and
-/// `Tg…` keys GPU sensors; which exact keys exist differs per chip, so they are discovered at start-up.
+/// The key names are undocumented. On Apple silicon `Tp…`, `Te…` and `Ts…` keys are CPU core
+/// sensors (performance, efficiency and super cores) and `Tg…` keys GPU sensors — the same
+/// selection mactop makes. Which exact keys exist differs per chip, so they are discovered at start-up.
 private final class SMCReader {
     private struct KeyData {
         struct Version { var major: UInt8 = 0, minor: UInt8 = 0, build: UInt8 = 0, reserved: UInt8 = 0; var release: UInt16 = 0 }
@@ -236,11 +254,23 @@ private final class SMCReader {
         IOServiceClose(connection)
     }
 
-    func temperatures() -> (cpu: Double?, gpu: Double?) {
-        func hottest(_ keys: [UInt32]) -> Double? {
-            keys.compactMap(float).filter(Self.plausible.contains).max().map(Double.init)
+    func temperatures() -> (cpu: MetricRange?, gpu: MetricRange?) {
+        func range(_ keys: [UInt32]) -> MetricRange? {
+            MetricRange(keys.compactMap(float).filter(Self.plausible.contains).map(Double.init))
         }
-        return (hottest(cpuKeys), hottest(gpuKeys))
+        return (range(cpuKeys), range(gpuKeys))
+    }
+
+    /// Power drawn by the whole machine in watts: the first of these keys that reads a plausible
+    /// value. `PSTR` is the system total on laptops; desktops report it on the DC-in keys.
+    func systemPower() -> Double? {
+        for name in ["PSTR", "PDTR", "PD0R"] {
+            let key = name.utf8.reduce(UInt32(0)) { $0 << 8 | UInt32($1) }
+            guard let info = keyInfo(key), info.dataType == Self.floatType, info.dataSize == 4,
+                  let watts = float(key), watts > 0, watts <= 1000 else { continue }
+            return Double(watts)
+        }
+        return nil
     }
 
     private func discoverKeys() {
@@ -251,12 +281,13 @@ private final class SMCReader {
             input.command = Command.keyAtIndex.rawValue
             input.index = index
             guard let key = call(&input)?.key else { continue }
-            // 'Tp..' and 'Tg..'
+            // 'Tp..', 'Te..', 'Ts..' are CPU cores; 'Tg..' is the GPU.
             let prefix = key >> 16
-            guard prefix == 0x5470 || prefix == 0x5467,
+            let isCPU = prefix == 0x5470 || prefix == 0x5465 || prefix == 0x5473
+            guard isCPU || prefix == 0x5467,
                   let info = keyInfo(key), info.dataType == Self.floatType, info.dataSize == 4,
                   let value = float(key), Self.plausible.contains(value) else { continue }
-            if prefix == 0x5470 { cpuKeys.append(key) } else { gpuKeys.append(key) }
+            if isCPU { cpuKeys.append(key) } else { gpuKeys.append(key) }
         }
     }
 

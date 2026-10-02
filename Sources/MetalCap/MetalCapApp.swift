@@ -14,8 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // `--show system` renders just the System section, which sits below the fold in the window.
             if sheet == "system" {
                 guard let capture = AppModel.shared.captures.first(where: { $0.system != nil }),
-                      let samples = capture.system, let duration = capture.metrics?.duration else { exit(1) }
-                let renderer = ImageRenderer(content: SystemSectionView(samples: samples, duration: duration)
+                      let samples = capture.system, let metrics = capture.metrics else { exit(1) }
+                let renderer = ImageRenderer(content: SystemSectionView(samples: samples, duration: metrics.duration,
+                                                                        averageFPS: metrics.average)
                     .padding(20).frame(width: 900).background(Color(nsColor: .windowBackgroundColor)))
                 renderer.scale = 2
                 guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,

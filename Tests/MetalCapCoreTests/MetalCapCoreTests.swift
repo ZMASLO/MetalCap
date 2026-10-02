@@ -351,10 +351,48 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         if let value = sample.cpuTemperature { #expect((10...130).contains(value)) }
         if let value = sample.gpuTemperature { #expect((10...130).contains(value)) }
         if let value = sample.cpuUsage { #expect((0...100).contains(value)) }
+        if let average = sample.cpuTemperatureAverage, let hottest = sample.cpuTemperature { #expect(average <= hottest) }
+        if let value = sample.cpuPower { #expect((0...500).contains(value)) }
+        if let value = sample.gpuPower { #expect((0...500).contains(value)) }
+        if let value = sample.systemPower { #expect((0...1000).contains(value)) }
         #expect((sample.systemMemory ?? 0) > 500)
         #expect((0...3).contains(sample.thermalState))
         #expect((reading.processes[pid]?.memory ?? 0) > 1)
         // One busy thread: close to 100% of a core.
         #expect((60...160).contains(reading.processes[pid]?.cpu ?? 0))
+    }
+}
+
+@Suite struct PowerChannelTests {
+    @Test func recognizesCPUPowerHistograms() {
+        for name in ["PACC", "PACC0", "MACC1", "EACC12", "PACC0 SRAM"] {
+            #expect(PowerChannels.isCPUPowerHistogram(subgroup: "Energy", name: name), "\(name)")
+        }
+        // The GPU, other subgroups and other suffixes are not CPU clusters.
+        #expect(!PowerChannels.isCPUPowerHistogram(subgroup: "Energy", name: "AGX"))
+        #expect(!PowerChannels.isCPUPowerHistogram(subgroup: "DCS BW", name: "PACC0"))
+        #expect(!PowerChannels.isCPUPowerHistogram(subgroup: "Energy", name: "PACC0 RD"))
+        #expect(!PowerChannels.isCPUPowerHistogram(subgroup: "Energy", name: "ACC"))
+    }
+
+    @Test func readsBinLabels() {
+        #expect(PowerChannels.binValue("2W") == 2)
+        #expect(PowerChannels.binValue("0.250W") == 0.25)
+        #expect(PowerChannels.binValue("  12GB/s") == 12)
+        #expect(PowerChannels.binValue("IDLE") == 0)
+    }
+
+    @Test func averagesBinsWithTheLowestCountedAsZero() {
+        // Half the time in the lowest bin (idle), a quarter each at 4 W and 8 W.
+        #expect(PowerChannels.weightedAverage(bins: [2, 4, 8], residency: [50, 25, 25]) == 3)
+        #expect(PowerChannels.weightedAverage(bins: [2, 4, 8], residency: [100, 0, 0]) == 0)
+        #expect(PowerChannels.weightedAverage(bins: [2, 4], residency: [0, 0]) == 0)
+    }
+
+    @Test func convertsEnergyUnits() {
+        #expect(PowerChannels.joules(1500, unit: "mJ") == 1.5)
+        #expect(PowerChannels.joules(2_000_000, unit: "uJ ") == 2)
+        #expect(PowerChannels.joules(3_000_000_000, unit: "nJ") == 3)
+        #expect(PowerChannels.joules(1, unit: "8.3ns") == nil)
     }
 }
