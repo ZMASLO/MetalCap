@@ -46,24 +46,32 @@ struct MainView: View {
                 }
             }
         }
+        .navigationSubtitle(model.activeProcess.map { "Wykryto: \($0)" } ?? "Nie wykryto gry")
         .toolbar {
-            ToolbarItem(placement: .status) {
-                Text(model.activeProcess.map { "Wykryto: \($0)" } ?? "Nie wykryto gry")
-                    .foregroundStyle(.secondary)
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 6) {
+                    Text("Metal HUD")
+                    Toggle("Metal HUD", isOn: Binding(get: { model.hudEnabled }, set: model.setHUDEnabled))
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                }
+                .padding(.horizontal, 6)
+                .help("Włącza Metal HUD i logowanie klatek dla aplikacji uruchomionych od tej chwili")
             }
-            ToolbarItemGroup {
-                Toggle("Metal HUD", isOn: Binding(get: { model.hudEnabled }, set: model.setHUDEnabled))
-                    .toggleStyle(.switch)
-                    .help("Włącza Metal HUD i logowanie klatek dla aplikacji uruchomionych od tej chwili")
-                Button("Uruchom grę…", systemImage: "play") { model.launchGame() }
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button("Uruchom grę…", systemImage: "play.fill") { model.launchGame() }
+                    .labelStyle(.titleAndIcon)
                     .help("Uruchamia grę z Metal HUD i czyta czasy klatek bezpośrednio z niej")
                 Button(model.isRecording ? "Zatrzymaj" : "Nagrywaj",
                        systemImage: model.isRecording ? "stop.circle.fill" : "record.circle") {
                     model.toggleCapture()
                 }
+                .labelStyle(.titleAndIcon)
                 .disabled(model.isFinishing)
                 .help("Start/stop przechwytywania (\(model.hotKey.display))")
                 Button("Ustawienia", systemImage: "gearshape") { showingSettings = true }
+                    .help("Ustawienia")
             }
         }
         .sheet(isPresented: $showingSettings) { SettingsView() }
@@ -111,7 +119,9 @@ struct CaptureDetailView: View {
 
     var body: some View {
         if let metrics = capture.metrics {
-            ScrollView {
+            // The chart takes whatever height is left; the page scrolls only when the window is too short.
+            GeometryReader { geometry in
+              ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header(metrics)
                     HStack(spacing: 12) {
@@ -133,14 +143,27 @@ struct CaptureDetailView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Czas klatki").font(.headline)
                         FrameTimeChart(points: FrameTimeChart.points(for: capture.frameTimes))
-                            .frame(height: 260)
+                            .frame(minHeight: 240, maxHeight: .infinity)
                     }
                 }
                 .padding(20)
+                .frame(minHeight: geometry.size.height, alignment: .top)
+              }
             }
         } else {
             ContentUnavailableView("Przechwycenie nie zawiera klatek", systemImage: "exclamationmark.triangle")
         }
+    }
+
+    /// Says when the log did not deliver every frame of the capture window.
+    private var warning: String? {
+        if let coverage = capture.coverage, coverage < 0.95 {
+            return "Klatki pokrywają tylko \(Int((coverage * 100).rounded()))% czasu pomiaru — część nie trafiła do logu."
+        }
+        if let missing = capture.missingFrames, missing * 100 >= capture.frameTimes.count {
+            return "Licznik Metal HUD wskazuje o \(missing) klatek więcej, niż było w logu."
+        }
+        return nil
     }
 
     private func header(_ metrics: FrameMetrics) -> some View {
@@ -148,8 +171,8 @@ struct CaptureDetailView: View {
             Text(capture.processName).font(.title2).bold()
             Text("\(capture.startedAt.formatted(date: .long, time: .standard)) · \(String(format: "%.1f", metrics.duration)) s · \(metrics.frameCount) klatek")
                 .foregroundStyle(.secondary)
-            if capture.lostLines > 0 {
-                Label("W logu zabrakło \(capture.lostLines) linii — w pomiarze są luki.", systemImage: "exclamationmark.triangle")
+            if let warning {
+                Label(warning, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
             }
         }

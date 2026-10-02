@@ -24,8 +24,9 @@ if let runIndex = arguments.firstIndex(of: "--run"), runIndex + 1 < arguments.co
                 print("No frames captured.")
                 exit(2)
             }
-            print(String(format: "%@: %d frames in %.2f s (lost lines: %d)",
-                         capture.processName, metrics.frameCount, metrics.duration, capture.lostLines))
+            print(String(format: "%@: %d frames in %.2f s (coverage %.1f%%, missing frames: %d)",
+                         capture.processName, metrics.frameCount, metrics.duration,
+                         (capture.coverage ?? .nan) * 100, capture.missingFrames ?? 0))
             print(String(format: "AVG %.1f | P1 %.1f | 1%% Low avg %.1f | 1%% Low integral %.1f | 0.1%% Low avg %.1f | min %.1f | max %.1f",
                          metrics.average, metrics.p1, metrics.onePercentLowAverage,
                          metrics.onePercentLowIntegral, metrics.pointOnePercentLowAverage,

@@ -9,17 +9,28 @@ public struct Capture: Codable, Identifiable, Equatable, Sendable {
     public var frameTimes: [Double]
     /// GPU time per frame in milliseconds, parallel to `frameTimes`.
     public var gpuTimes: [Double]
-    /// HUD log lines that went missing during the capture.
-    public var lostLines: Int
+    /// Wall-clock time between start and stop, in seconds. Compared with the summed
+    /// frame times it shows whether frames went missing. Nil in captures saved before it was recorded.
+    public var wallDuration: Double?
+    /// Frames the HUD's running counter says were presented but that were not in the log.
+    public var missingFrames: Int?
 
     public init(id: UUID = UUID(), processName: String, startedAt: Date,
-                frameTimes: [Double], gpuTimes: [Double], lostLines: Int = 0) {
+                frameTimes: [Double], gpuTimes: [Double],
+                wallDuration: Double? = nil, missingFrames: Int? = nil) {
         self.id = id
         self.processName = processName
         self.startedAt = startedAt
         self.frameTimes = frameTimes
         self.gpuTimes = gpuTimes
-        self.lostLines = lostLines
+        self.wallDuration = wallDuration
+        self.missingFrames = missingFrames
+    }
+
+    /// Share of the capture window covered by the recorded frames (1 = complete).
+    public var coverage: Double? {
+        guard let wallDuration, wallDuration > 0 else { return nil }
+        return frameTimes.reduce(0, +) / 1000 / wallDuration
     }
 
     public var metrics: FrameMetrics? { FrameMetrics(frameTimes: frameTimes) }
@@ -36,7 +47,7 @@ public final class CaptureRecorder {
         var name: String
         var frameTimes: [Double] = []
         var gpuTimes: [Double] = []
-        var lostLines = 0
+        var missingFrames = 0
     }
 
     public private(set) var isRecording = false
@@ -70,9 +81,8 @@ public final class CaptureRecorder {
         guard isRecording, !sample.frames.isEmpty else { return }
 
         var entry = processes[event.pid] ?? ProcessFrames(name: event.processName)
-        if let previous, sample.frameNumber - previous != sample.frames.count,
-           event.time >= startTime {
-            entry.lostLines += 1
+        if let previous, event.time >= startTime {
+            entry.missingFrames += max(0, sample.frameNumber - previous - sample.frames.count)
         }
 
         // The last frame in the line was presented at about `event.time`.
@@ -101,6 +111,7 @@ public final class CaptureRecorder {
         guard let chosen else { return nil }
         return Capture(processName: chosen.name, startedAt: startTime,
                        frameTimes: chosen.frameTimes, gpuTimes: chosen.gpuTimes,
-                       lostLines: chosen.lostLines)
+                       wallDuration: stopTime == .distantFuture ? nil : stopTime.timeIntervalSince(startTime),
+                       missingFrames: chosen.missingFrames)
     }
 }

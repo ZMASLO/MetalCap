@@ -107,16 +107,21 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         let capture = recorder.finish()
         #expect(capture?.frameTimes.count == 5 + 10 + 2)
         #expect(capture?.processName == "game1")
-        #expect(capture?.lostLines == 0)
+        #expect(capture?.missingFrames == 0)
+        #expect(isClose(capture?.wallDuration ?? 0, 1.7))
+        #expect(isClose(capture?.coverage ?? 0, 1, tolerance: 1e-6))
         #expect(recorder.isRecording == false)
     }
 
-    @Test func countsLostLines() {
+    @Test func countsMissingFrames() {
         let recorder = CaptureRecorder()
         recorder.start(at: t0)
         recorder.ingest(event(end: 1, frameNumber: 10))
         recorder.ingest(event(end: 3, frameNumber: 30))   // the line ending at 2 s is missing
-        #expect(recorder.finish()?.lostLines == 1)
+        recorder.stop(at: t0.addingTimeInterval(3))
+        let capture = recorder.finish()
+        #expect(capture?.missingFrames == 10)
+        #expect(isClose(capture?.coverage ?? 0, 2.0 / 3.0, tolerance: 1e-6))
     }
 
     @Test func prefersRequestedProcess() {
@@ -150,7 +155,7 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         #expect(store.loadAll().isEmpty)
 
         let older = Capture(processName: "a", startedAt: Date(timeIntervalSince1970: 1_000),
-                            frameTimes: [16.67, 16.66], gpuTimes: [5, 6], lostLines: 1)
+                            frameTimes: [16.67, 16.66], gpuTimes: [5, 6], wallDuration: 0.04, missingFrames: 1)
         let newer = Capture(processName: "b", startedAt: Date(timeIntervalSince1970: 2_000),
                             frameTimes: [8.33], gpuTimes: [3])
         try store.save(older)
