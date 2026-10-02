@@ -49,10 +49,12 @@ if let runIndex = arguments.firstIndex(of: "--run"), runIndex + 1 < arguments.co
         // Give the HUD time to log the line covering the last frames.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             source.terminate()
-            guard let capture = recorder.finish(), let metrics = capture.metrics else {
+            guard var capture = recorder.finish(), let metrics = capture.metrics else {
                 print("No frames captured.")
                 exit(2)
             }
+            capture.hardware = HardwareInfo.current()
+            print(capture.hardware?.summary ?? "")
             print(String(format: "%@: %d frames in %.2f s (coverage %.1f%%, missing frames: %d)",
                          capture.processName, metrics.frameCount, metrics.duration,
                          (capture.coverage ?? .nan) * 100, capture.missingFrames ?? 0))

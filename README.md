@@ -38,12 +38,26 @@ W trakcie pomiaru MetalCap raz na sekundę zapisuje stan systemu i pokazuje go w
 - **Moc GPU** — licznik energii „GPU Energy” z IOReport.
 - **Moc CPU** — licznik „CPU Energy”; na macOS 27 zwraca on zero, więc moc jest szacowana z histogramów mocy klastrów (grupy PMP), tak jak robi to mactop.
 - **Moc całego Maca** — klucz SMC `PSTR` (zapasowo `PDTR`, `PD0R`); z niej liczony jest wskaźnik „FPS na wat”.
+- **Klastry CPU, taktowanie i wentylator** — aktywność i taktowanie każdego klastra rdzeni oraz taktowanie GPU z IOReport (stany wydajności i tabele częstotliwości menedżera zasilania), obroty wentylatora z kluczy SMC `F<n>Ac`. Klaster wyłączony albo bezczynny nie liczy się jako aktywny.
 - **CPU i RAM gry** — czas procesora i zajętość pamięci procesu, z którego pochodzą klatki.
 - **Stan termiczny**, zasilanie z baterii i tryb niskiego zużycia energii — jako uwagi w nagłówku wyniku.
 
 Nic z tego nie wymaga uprawnień administratora. Wyniki zapisane wcześniej nie mają tej sekcji.
 
 Odczyty były porównane z mactop 2.1.6 na MacBooku Pro M5 Pro (macOS 27.0.1), w spoczynku i przy obciążeniu CPU: temperatury zgodne do 0,8°C, moc CPU do 2%, moc całego Maca poniżej 1%. `MetalCap --sample 10` wypisuje odczyty co sekundę, żeby takie porównanie dało się powtórzyć.
+
+## Sprzęt i eksport
+
+Każdy nowy wynik zapisuje komputer, na którym powstał: model, identyfikator modelu, układ, liczbę rdzeni CPU (z podziałem na klastry) i GPU, ilość RAM oraz wersję macOS. Linia ze sprzętem jest widoczna pod nagłówkiem wyniku.
+
+Przycisk „Eksportuj” przy wyniku zapisuje:
+
+- **Pełny wynik (JSON)** — metadane, sprzęt, metryki FPS, wszystkie klatki i serię metryk systemowych; pole `formatVersion` oznacza wersję układu pliku.
+- **Klatki (CSV)** — wiersz na klatkę: numer, czas od startu, czas klatki, czas GPU, FPS.
+- **Metryki systemowe (CSV)** — wiersz na sekundę pomiaru.
+- **Podsumowanie wszystkich wyników (CSV)** — wiersz na wynik: metryki FPS, sprzęt, średnie i maksima systemowe.
+
+Format CSV wybiera się w ustawieniach: standardowy (przecinek, kropka dziesiętna) albo dla polskiego Excela (średnik, przecinek dziesiętny).
 
 ## Nakładka HUD
 

@@ -164,6 +164,7 @@ struct SettingsView: View {
 struct GeneralSettingsView: View {
     @EnvironmentObject private var model: AppModel
     @AppStorage("lowVariant") private var lowVariant = LowVariant.average
+    @AppStorage("csvDialect") private var csvDialect = CSVDialect.standard
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -176,6 +177,10 @@ struct GeneralSettingsView: View {
                     Text(tr("Automatycznie", "Automatic")).tag("auto")
                     Text("Polski").tag("pl")
                     Text("English").tag("en")
+                }
+                Picker(tr("Format CSV", "CSV format"), selection: $csvDialect) {
+                    Text(tr("Standardowy (przecinek, kropka dziesiętna)", "Standard (comma, decimal point)")).tag(CSVDialect.standard)
+                    Text(tr("Excel PL (średnik, przecinek dziesiętny)", "European Excel (semicolon, decimal comma)")).tag(CSVDialect.semicolon)
                 }
                 LabeledContent(tr("Czasy klatek w logu", "Frame times in the log")) {
                     HStack {
@@ -417,7 +422,8 @@ struct CaptureDetailView: View {
                         }
                     }
                     if let system = capture.system, !system.isEmpty {
-                        SystemSectionView(samples: system, duration: metrics.duration, averageFPS: metrics.average)
+                        SystemSectionView(samples: system, duration: metrics.duration, averageFPS: metrics.average,
+                                          coreTiers: capture.hardware?.coreTiers.map(\.name) ?? [])
                     }
                 }
                 .padding(20)
@@ -470,6 +476,18 @@ struct CaptureDetailView: View {
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .help(tr("Zmień nazwę", "Rename"))
+                Spacer()
+                Menu(tr("Eksportuj", "Export"), systemImage: "square.and.arrow.up") {
+                    Button(tr("Pełny wynik (JSON)…", "Full result (JSON)…")) { model.export(.json, capture: capture) }
+                    Button(tr("Klatki (CSV)…", "Frames (CSV)…")) { model.export(.framesCSV, capture: capture) }
+                    Button(tr("Metryki systemowe (CSV)…", "System metrics (CSV)…")) { model.export(.systemCSV, capture: capture) }
+                        .disabled(capture.system?.isEmpty != false)
+                    Divider()
+                    Button(tr("Podsumowanie wszystkich wyników (CSV)…", "Summary of all results (CSV)…")) {
+                        model.export(.summaryCSV, capture: capture)
+                    }
+                }
+                .fixedSize()
             }
             if capture.name != nil {
                 Text(tr("Proces: \(capture.processName)", "Process: \(capture.processName)"))
@@ -478,6 +496,9 @@ struct CaptureDetailView: View {
             }
             Text("\(formatted(capture.startedAt, date: .long, time: .standard)) · \(String(format: "%.1f", metrics.duration)) s · \(tr("klatki", "frames")): \(metrics.frameCount)")
                 .foregroundStyle(.secondary)
+            if let hardware = capture.hardware {
+                Text(hardware.summary).foregroundStyle(.secondary)
+            }
             ForEach(notes, id: \.self) { note in
                 Label(note, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
@@ -588,6 +609,11 @@ struct SystemSectionView: View {
     let duration: Double
     /// Average frame rate of the capture, for the frames-per-watt figure.
     let averageFPS: Double
+    /// Names of the CPU core tiers, fastest first (e.g. "Super", "Performance"), when known.
+    var coreTiers: [String] = []
+
+    private var fastClusterName: String { coreTiers.first ?? tr("Szybki klaster", "Fast cluster") }
+    private var secondClusterName: String { coreTiers.dropFirst().first ?? tr("Drugi klaster", "Second cluster") }
 
     private static func megabytes(_ value: Double) -> String {
         value >= 1024 ? String(format: "%.1f GB", value / 1024) : String(format: "%.0f MB", value)
@@ -600,6 +626,8 @@ struct SystemSectionView: View {
 
     private static func percent(_ value: Double) -> String { String(format: "%.0f%%", value) }
     private static func degrees(_ value: Double) -> String { String(format: "%.0f°C", value) }
+    private static func megahertz(_ value: Double) -> String { String(format: "%.0f MHz", value) }
+    private static func rpm(_ value: Double) -> String { String(format: "%.0f", value) }
     private static func watts(_ value: Double) -> String { String(format: value < 10 ? "%.1f W" : "%.0f W", value) }
 
     /// Temperature tile: the peak of the hottest sensor, with the mean across sensors underneath.
@@ -669,6 +697,11 @@ struct SystemSectionView: View {
                      series(tr("Cały Mac", "Whole Mac"), \.systemPower)].compactMap { $0 }
         let memory = [series(tr("Gra", "Game"), \.processMemory), series("GPU", \.gpuMemory)].compactMap { $0 }
         let gameCPU = [series("CPU", \.processCPU)].compactMap { $0 }
+        let clusterActivity = [series(fastClusterName, \.fastClusterActive),
+                               series(secondClusterName, \.secondClusterActive)].compactMap { $0 }
+        let clocks = [series(fastClusterName, \.fastClusterFrequency), series(secondClusterName, \.secondClusterFrequency),
+                      series("GPU", \.gpuFrequency)].compactMap { $0 }
+        let fan = [series(tr("Wentylator", "Fan"), \.fanSpeed)].compactMap { $0 }
         // A nil range lets the chart fit the data; temperatures read better without a zero baseline.
         let charts: [(title: String, series: [TimeSeriesChart.Series], range: ClosedRange<Double>?, format: (Double) -> String)] = [
             (tr("Obciążenie GPU (%)", "GPU load (%)"), [series("GPU", \.gpuUtilization)].compactMap { $0 }, 0...100, Self.percent),
@@ -679,6 +712,9 @@ struct SystemSectionView: View {
             (tr("Moc (W)", "Power (W)"), power, Self.fromZero(power), Self.watts),
             (tr("Pamięć (MB)", "Memory (MB)"), memory, Self.fromZero(memory), Self.megabytes),
             (tr("CPU gry (% jednego rdzenia)", "Game CPU (% of one core)"), gameCPU, Self.fromZero(gameCPU), Self.percent),
+            (tr("Aktywność klastrów CPU (%)", "CPU cluster activity (%)"), clusterActivity, 0...100, Self.percent),
+            (tr("Taktowanie (MHz)", "Clock (MHz)"), clocks, Self.fromZero(clocks), Self.megahertz),
+            (tr("Wentylator (obr./min)", "Fan (RPM)"), fan, Self.fromZero(fan), Self.rpm),
         ].filter { !$0.series.isEmpty }
 
         VStack(alignment: .leading, spacing: 12) {

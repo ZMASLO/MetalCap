@@ -87,6 +87,7 @@ final class AppModel: ObservableObject {
         .map { URL(fileURLWithPath: $0, isDirectory: true) })
     private let recorder = CaptureRecorder()
     private let sampler = SystemSampler()
+    private let hardware = HardwareInfo.current()
     private var samplingTimer: Timer?
     /// Power conditions when the current capture started.
     private var startedOnBattery: Bool?
@@ -275,6 +276,7 @@ final class AppModel: ObservableObject {
             return
         }
         capture.name = nameAliases[capture.processName]
+        capture.hardware = hardware
         capture.onBattery = startedOnBattery
         capture.lowPowerMode = startedInLowPowerMode
         do {
@@ -324,6 +326,43 @@ final class AppModel: ObservableObject {
         } catch {
             message = tr("Nie udało się zapisać komentarza: ", "Could not save the comment: ")
                 + error.localizedDescription
+        }
+    }
+
+    // MARK: Export
+
+    enum ExportKind {
+        case json, framesCSV, systemCSV, summaryCSV
+    }
+
+    /// Asks where to save and writes the export. The summary covers every capture; the others, `capture`.
+    func export(_ kind: ExportKind, capture: Capture) {
+        let dialect = CSVDialect(rawValue: UserDefaults.standard.string(forKey: "csvDialect") ?? "") ?? .standard
+        let stamp = capture.startedAt.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
+        let base = "\(capture.displayName) \(stamp)".replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        let fileName: String
+        let contents: Data
+        do {
+            switch kind {
+            case .json:
+                (fileName, contents) = ("\(base).json", try CaptureExporter.json(capture))
+            case .framesCSV:
+                (fileName, contents) = ("\(base) \(tr("klatki", "frames")).csv",
+                                        Data(CaptureExporter.framesCSV(capture, dialect: dialect).utf8))
+            case .systemCSV:
+                (fileName, contents) = ("\(base) system.csv",
+                                        Data(CaptureExporter.systemCSV(capture, dialect: dialect).utf8))
+            case .summaryCSV:
+                (fileName, contents) = ("MetalCap \(tr("podsumowanie", "summary")).csv",
+                                        Data(CaptureExporter.summaryCSV(captures, dialect: dialect).utf8))
+            }
+            let panel = NSSavePanel()
+            panel.nameFieldStringValue = fileName
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            try contents.write(to: url, options: .atomic)
+        } catch {
+            message = tr("Nie udało się wyeksportować: ", "Could not export: ") + error.localizedDescription
         }
     }
 

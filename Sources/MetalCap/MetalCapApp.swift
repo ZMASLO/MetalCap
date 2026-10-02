@@ -16,7 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let capture = AppModel.shared.captures.first(where: { $0.system != nil }),
                       let samples = capture.system, let metrics = capture.metrics else { exit(1) }
                 let renderer = ImageRenderer(content: SystemSectionView(samples: samples, duration: metrics.duration,
-                                                                        averageFPS: metrics.average)
+                                                                        averageFPS: metrics.average,
+                                                                        coreTiers: capture.hardware?.coreTiers.map(\.name) ?? [])
                     .padding(20).frame(width: 900).background(Color(nsColor: .windowBackgroundColor)))
                 renderer.scale = 2
                 guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
