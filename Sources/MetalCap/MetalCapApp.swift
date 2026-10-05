@@ -6,7 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Needed when run as a bare executable (`swift run`) rather than from the .app bundle.
         NSApp.setActivationPolicy(.regular)
 
-        // `--snapshot <png> [--size WxH] [--show settings|overlay|unlock|rename|system] [--lang pl|en]` renders the main
+        // `--snapshot <png> [--size WxH] [--show settings|overlay|unlock|rename|system] [--lang pl|en] [--scroll N]` renders the main
         // window, or the requested sheet, to a file and quits (for UI checks).
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: "--snapshot"), index + 1 < arguments.count {
@@ -37,6 +37,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // An inactive window renders its toolbar and selection differently.
                 NSApp.activate(ignoringOtherApps: true)
                 window.makeKeyAndOrderFront(nil)
+                // `--scroll <points>` scrolls the tallest scroll view, to check what passes under the toolbar.
+                if let scrollIndex = arguments.firstIndex(of: "--scroll"), scrollIndex + 1 < arguments.count,
+                   let offset = Double(arguments[scrollIndex + 1]), let content = window.contentView {
+                    func scrollViews(in view: NSView) -> [NSScrollView] {
+                        (view as? NSScrollView).map { [$0] } ?? [] + view.subviews.flatMap(scrollViews)
+                    }
+                    if let scrollView = scrollViews(in: content)
+                        .max(by: { ($0.documentView?.frame.height ?? 0) < ($1.documentView?.frame.height ?? 0) }) {
+                        scrollView.contentView.scroll(to: NSPoint(x: 0, y: offset))
+                        scrollView.reflectScrolledClipView(scrollView.contentView)
+                    }
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     guard let view = (window.attachedSheet ?? window).contentView?.superview,
                           let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { exit(1) }

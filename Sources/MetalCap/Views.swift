@@ -96,7 +96,7 @@ struct MainView: View {
                 }
             }
         }
-        // Without this the toolbar gets its own white strip that overhangs the sidebar edge.
+        // The toolbar stays transparent: an opaque one overhangs the sidebar edge by a few points.
         .toolbarBackground(.hidden, for: .windowToolbar)
         .navigationSubtitle(model.activeProcess.map { tr("Wykryto: \($0)", "Detected: \($0)") }
                             ?? tr("Nie wykryto gry", "No game detected"))
@@ -430,6 +430,8 @@ struct CaptureDetailView: View {
                 .frame(minHeight: geometry.size.height, alignment: .top)
               }
             }
+            // Content must not scroll up under the transparent toolbar.
+            .clipped()
         } else {
             ContentUnavailableView(tr("Przechwycenie nie zawiera klatek", "The capture contains no frames"), systemImage: "exclamationmark.triangle")
         }
