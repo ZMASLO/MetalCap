@@ -1,10 +1,10 @@
 #!/bin/sh
 # Builds a release binary and wraps it in build/MetalCap.app (ad-hoc signed).
-# VERSION and BUILD_NUMBER set the bundle's version (defaults: 0.1.0 and 1).
+# VERSION and BUILD_NUMBER set the bundle's version (defaults: 1.0.0 and 1).
 set -e
 cd "$(dirname "$0")/.."
 
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-1.0.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
 
 swift build -c release

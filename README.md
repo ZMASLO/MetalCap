@@ -14,7 +14,7 @@ Scripts/make-app.sh     # buduje build/MetalCap.app
 open build/MetalCap.app
 ```
 
-Ikonę generuje `swift Scripts/make-icon.swift` (zapisuje `Resources/AppIcon.icns`); wersję paczki ustawia zmienna `VERSION`, np. `VERSION=0.2.0 Scripts/make-app.sh`.
+Ikonę generuje `swift Scripts/make-icon.swift` (zapisuje `Resources/AppIcon.icns`); wersję paczki ustawia zmienna `VERSION` (domyślnie 1.0.0), np. `VERSION=1.1.0 Scripts/make-app.sh`. Wersja jest widoczna na dole okna ustawień.
 
 ### Testy
 
@@ -24,7 +24,7 @@ Ikonę generuje `swift Scripts/make-icon.swift` (zapisuje `Resources/AppIcon.icn
 ### CI i wydania
 
 - **CI** (`.github/workflows/ci.yml`): przy każdym pushu do `main` i pull requeście buduje projekt, uruchamia testy, składa `MetalCap.app` i dołącza ją jako artefakt.
-- **Wydanie** (`.github/workflows/release.yml`): push tagu `v*` (np. `git tag v0.2.0 && git push origin v0.2.0`) uruchamia testy, buduje aplikację z tą wersją i publikuje wydanie GitHub z plikiem `MetalCap-<wersja>.zip`.
+- **Wydanie** (`.github/workflows/release.yml`): push tagu `v*` (np. `git tag v1.0.0 && git push origin v1.0.0`) uruchamia testy, buduje aplikację z tą wersją i publikuje wydanie GitHub z plikiem `MetalCap-<wersja>.zip`.
 
 Aplikacja jest podpisana ad hoc i nienotaryzowana, więc po pobraniu macOS zablokuje pierwsze uruchomienie; trzeba ją otworzyć z menu kontekstowego („Otwórz”) albo zezwolić w Ustawieniach systemowych → Prywatność i ochrona.
 

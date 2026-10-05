@@ -136,6 +136,16 @@ struct MainView: View {
 }
 
 struct SettingsView: View {
+    /// "MetalCap 1.0.0 (7)", from the app bundle; a bare development build has no bundle version.
+    static var versionText: String {
+        let info = Bundle.main.infoDictionary
+        guard let version = info?["CFBundleShortVersionString"] as? String else {
+            return tr("MetalCap (wersja deweloperska)", "MetalCap (development build)")
+        }
+        let build = (info?["CFBundleVersion"] as? String).map { " (\($0))" } ?? ""
+        return "MetalCap \(version)\(build)"
+    }
+
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
@@ -151,9 +161,15 @@ struct SettingsView: View {
                     .tabItem { Text(tr("Nakładka HUD", "HUD overlay")) }
                     .tag(1)
             }
-            HStack {
-                Spacer()
-                Button(tr("Gotowe", "Done")) { dismiss() }.keyboardShortcut(.defaultAction)
+            // The version sits centred, the Done button at the right.
+            ZStack {
+                Text(Self.versionText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Spacer()
+                    Button(tr("Gotowe", "Done")) { dismiss() }.keyboardShortcut(.defaultAction)
+                }
             }
         }
         .padding(20)
