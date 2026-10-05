@@ -423,16 +423,6 @@ struct CaptureDetailView: View {
                                   value: lowVariant == .average ? metrics.onePercentLowAverage : metrics.onePercentLowIntegral),
                         ])
                     }
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(tr("Czas klatki (ms)", "Frame time (ms)")).font(.headline)
-                        FrameTimeChart(points: FrameTimeChart.points(for: capture.frameTimes), duration: metrics.duration,
-                                       hoverTime: $hoverTime)
-                            .frame(height: 220)
-                        // The average matches AVG: total time over frame count.
-                        if let range = MetricRange(capture.frameTimes.filter { $0 > 0 }) {
-                            RangeSummary(range: range) { String(format: "%.2f ms", $0) }
-                        }
-                    }
                     SystemSectionView(capture: capture, averageFPS: metrics.average, hoverTime: $hoverTime)
                 }
                 .padding(20)
@@ -628,8 +618,8 @@ enum MetricFormat {
     static func watts(_ value: Double) -> String { String(format: value < 10 ? "%.1f W" : "%.0f W", value) }
 }
 
-/// The machine and context of the capture, the system metrics' averages and peaks, and their charts
-/// in themed pairs.
+/// The machine and context of the capture, the system metrics' averages and peaks, the frame time
+/// chart and the system charts in themed pairs.
 struct SystemSectionView: View {
     let capture: Capture
     /// Average frame rate of the capture, for the frames-per-watt figure.
@@ -773,6 +763,19 @@ struct SystemSectionView: View {
         return groups.map { ($0.0, $0.1.compactMap { $0 }) }.filter { !$0.charts.isEmpty }
     }
 
+    /// Full width, above the system charts so a stutter can be traced down to them.
+    private var frameTime: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(tr("Czas klatki (ms)", "Frame time (ms)")).font(.headline)
+            FrameTimeChart(points: FrameTimeChart.points(for: capture.frameTimes), duration: duration, hoverTime: $hoverTime)
+                .frame(height: 220)
+            // The average matches AVG: total time over frame count.
+            if let range = MetricRange(capture.frameTimes.filter { $0 > 0 }) {
+                RangeSummary(range: range) { String(format: "%.2f ms", $0) }
+            }
+        }
+    }
+
     private func chart(_ spec: ChartSpec, showsTimeAxis: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(spec.title).font(.subheadline).foregroundStyle(.secondary)
@@ -804,6 +807,8 @@ struct SystemSectionView: View {
                 if !samples.isEmpty {
                     tiles
                 }
+                frameTime
+                    .padding(.top, 8)
                 ForEach(groups.indices, id: \.self) { index in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(groups[index].title.uppercased())
@@ -827,6 +832,9 @@ struct SystemSectionView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        } else {
+            // Old captures without hardware or system data still get their frame time chart.
+            frameTime
         }
     }
 
