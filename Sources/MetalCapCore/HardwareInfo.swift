@@ -43,6 +43,11 @@ public struct HardwareInfo: Codable, Equatable, Sendable {
 
     public var cpuCores: Int { coreTiers.reduce(0) { $0 + $1.cores } }
 
+    /// The CPU core tiers, fastest first: "6 Super + 12 Performance".
+    public var coreTierDescription: String {
+        coreTiers.map { "\($0.cores) \($0.name)" }.joined(separator: " + ")
+    }
+
     /// One line for display: "MacBook Pro (16-inch, M5 Pro) · Apple M5 Pro · 48 GB · macOS 27.0.1".
     /// The chip is left out when the model name already contains it.
     public var summary: String {

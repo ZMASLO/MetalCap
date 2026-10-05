@@ -446,6 +446,34 @@ struct CaptureDetailView: View {
         }
     }
 
+    /// "CPU: 18 rdzeni (6 Super + 12 Performance) · GPU: 20 rdzeni"
+    private func coresLine(_ hardware: HardwareInfo) -> String {
+        func cores(_ count: Int) -> String {
+            guard L10n.language == .polish else { return "\(count) \(count == 1 ? "core" : "cores")" }
+            let lastDigit = count % 10, lastTwo = count % 100
+            let word = count == 1 ? "rdzeń" : (2...4).contains(lastDigit) && !(12...14).contains(lastTwo) ? "rdzenie" : "rdzeni"
+            return "\(count) \(word)"
+        }
+        let cpu = "CPU: \(cores(hardware.cpuCores)) (\(hardware.coreTierDescription))"
+        return [cpu, hardware.gpuCores.map { "GPU: \(cores($0))" }].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// "Okno gry: 3456×2234 (pełny ekran) · Tryb gry: włączony"
+    private var gameContextLine: String? {
+        var parts: [String] = []
+        if let window = capture.window {
+            parts.append(tr("Okno gry: ", "Game window: ") + "\(window.width)×\(window.height)"
+                         + (window.fullScreen ? tr(" (pełny ekran)", " (full screen)") : tr(" (w oknie)", " (windowed)")))
+        }
+        switch capture.gameMode {
+        case .wholeCapture: parts.append(tr("Tryb gry: włączony", "Game Mode: on"))
+        case .partOfCapture: parts.append(tr("Tryb gry: włączony przez część pomiaru", "Game Mode: on for part of the capture"))
+        case .off: parts.append(tr("Tryb gry: wyłączony", "Game Mode: off"))
+        case nil: break
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     /// Conditions that make the result less comparable: gaps in the log, heat, power saving.
     private var notes: [String] {
         var notes = warning.map { [$0] } ?? []
@@ -458,6 +486,10 @@ struct CaptureDetailView: View {
         }
         if capture.onBattery == true {
             notes.append(tr("Pomiar na zasilaniu z baterii.", "Captured on battery power."))
+        }
+        if capture.gameMode == .partOfCapture {
+            notes.append(tr("Tryb gry nie działał przez cały pomiar — wyniki mogą być niższe.",
+                            "Game Mode was not on for the whole capture — results may be lower."))
         }
         if capture.lowPowerMode == true {
             notes.append(tr("Pomiar w trybie niskiego zużycia energii.", "Captured in Low Power Mode."))
@@ -509,6 +541,15 @@ struct CaptureDetailView: View {
                 .foregroundStyle(.secondary)
             if let hardware = capture.hardware {
                 Text(hardware.summary).foregroundStyle(.secondary)
+                if !hardware.coreTiers.isEmpty {
+                    Text(coresLine(hardware)).foregroundStyle(.secondary)
+                }
+            }
+            if let context = gameContextLine {
+                Text(context)
+                    .foregroundStyle(.secondary)
+                    .help(tr("Rozdzielczość okna gry to rozdzielczość wyjściowa. Gra może renderować w niższej i skalować obraz, np. przez MetalFX. W trybie okienkowym wymiar obejmuje też pasek tytułu okna.",
+                             "The game window's resolution is the output resolution. The game may render lower and upscale, e.g. with MetalFX. In windowed mode the size also includes the window's title bar."))
             }
             ForEach(notes, id: \.self) { note in
                 Label(note, systemImage: "exclamationmark.triangle")

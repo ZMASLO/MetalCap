@@ -38,6 +38,8 @@ public enum CaptureExporter {
         var comment: String?
         var startedAt: Date
         var hardware: HardwareInfo?
+        var window: GameWindow?
+        var gameMode: GameModeSummary?
         var onBattery: Bool?
         var lowPowerMode: Bool?
         var metrics: Metrics?
@@ -56,7 +58,8 @@ public enum CaptureExporter {
         }
         let document = Document(
             id: capture.id, name: capture.displayName, processName: capture.processName, comment: capture.comment,
-            startedAt: capture.startedAt, hardware: capture.hardware, onBattery: capture.onBattery,
+            startedAt: capture.startedAt, hardware: capture.hardware, window: capture.window,
+            gameMode: capture.gameMode, onBattery: capture.onBattery,
             lowPowerMode: capture.lowPowerMode, metrics: metrics,
             frames: .init(frameTimesMs: capture.frameTimes, gpuTimesMs: capture.gpuTimes), system: capture.system)
         let encoder = JSONEncoder()
@@ -93,9 +96,9 @@ public enum CaptureExporter {
     public static func systemCSV(_ capture: Capture, dialect: CSVDialect) -> String {
         let rows = (capture.system ?? []).map { sample in
             [.number(sample.time, 2)] + systemColumns.map { Field.number(sample[keyPath: $0.1], $0.2) }
-                + [.integer(sample.thermalState)]
+                + [.integer(sample.thermalState), .text(sample.gameMode?.rawValue ?? "")]
         }
-        return csv(header: ["time_s"] + systemColumns.map(\.0) + ["thermal_state"], rows: rows, dialect: dialect)
+        return csv(header: ["time_s"] + systemColumns.map(\.0) + ["thermal_state", "game_mode"], rows: rows, dialect: dialect)
     }
 
     /// One row per capture: what it was, the frame-rate metrics, the machine and the system averages and peaks.
@@ -110,7 +113,8 @@ public enum CaptureExporter {
         let header = ["name", "process", "comment", "started_at", "duration_s", "frames",
                       "avg_fps", "p1_fps", "one_percent_low_avg_fps", "one_percent_low_integral_fps",
                       "point_one_percent_low_avg_fps", "median_fps", "min_fps", "max_fps",
-                      "model", "model_identifier", "chip", "cpu_cores", "gpu_cores", "memory_gb", "os_version"]
+                      "model", "model_identifier", "chip", "cpu_cores", "cpu_core_tiers", "gpu_cores", "memory_gb",
+                      "os_version", "window_width", "window_height", "full_screen", "game_mode"]
             + ranged.flatMap { ["\($0.0)_avg", "\($0.0)_max"] }
         let rows = captures.map { capture -> [Field] in
             let metrics = capture.metrics
@@ -123,8 +127,10 @@ public enum CaptureExporter {
                 .number(metrics?.pointOnePercentLowAverage, 1), .number(metrics?.median, 1),
                 .number(metrics?.min, 1), .number(metrics?.max, 1),
                 .text(hardware?.modelName ?? ""), .text(hardware?.modelIdentifier ?? ""), .text(hardware?.chip ?? ""),
-                .integer(hardware?.cpuCores), .integer(hardware?.gpuCores), .integer(hardware?.memoryGB),
-                .text(hardware?.osVersion ?? ""),
+                .integer(hardware?.cpuCores), .text(hardware?.coreTierDescription ?? ""),
+                .integer(hardware?.gpuCores), .integer(hardware?.memoryGB), .text(hardware?.osVersion ?? ""),
+                .integer(capture.window?.width), .integer(capture.window?.height),
+                .text(capture.window.map { $0.fullScreen ? "yes" : "no" } ?? ""), .text(capture.gameMode?.rawValue ?? ""),
             ]
             for column in ranged {
                 let range = capture.system?.range(of: column.1)

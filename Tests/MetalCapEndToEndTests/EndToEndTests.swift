@@ -72,7 +72,11 @@ private func verify(_ capture: Capture) throws {
     let metrics = try #require(capture.metrics)
     #expect(abs(metrics.average - targetFPS) < 2, "AVG \(metrics.average)")
     #expect(abs(metrics.median - targetFPS) < 1, "median \(metrics.median)")
-    #expect(abs(Double(metrics.frameCount) - captureSeconds * targetFPS) <= 15, "frames \(metrics.frameCount)")
+    // Timers may run a little late on a busy machine, so expect frames for the time actually recorded.
+    let wallDuration = try #require(capture.wallDuration)
+    #expect((captureSeconds - 0.1...captureSeconds + 1).contains(wallDuration), "window \(wallDuration) s")
+    #expect(abs(Double(metrics.frameCount) - wallDuration * targetFPS) <= 15,
+            "frames \(metrics.frameCount) in \(wallDuration) s")
     // The recorded frames cover the capture window and the log lost nothing.
     #expect((0.95...1.05).contains(capture.coverage ?? 0), "coverage \(capture.coverage ?? 0)")
     #expect((capture.missingFrames ?? 0) <= metrics.frameCount / 50, "missing frames \(capture.missingFrames ?? 0)")
@@ -121,6 +125,13 @@ struct MetalCapEndToEndTests {
         let capture = try #require(try await pipeline.capture(seconds: captureSeconds), "no frames from the probe")
         #expect(capture.processName == "MetalCapProbe")
         try verify(capture)
+        // The probe's content is 480×300 points. The system reports the whole window frame, so the
+        // height also includes the title bar; the width is exact (times the display's scale).
+        let window = try #require(GameWindow.current(pid: source.pid), "the probe's window was not found")
+        let scale = window.width / 480
+        #expect(!window.fullScreen)
+        #expect(window.width == 480 * scale && scale >= 1, "window \(window.width)×\(window.height)")
+        #expect((300 * scale...360 * scale).contains(window.height), "window \(window.width)×\(window.height)")
     }
 
     /// The path of games started from Steam or CrossOver: they log to the unified log,

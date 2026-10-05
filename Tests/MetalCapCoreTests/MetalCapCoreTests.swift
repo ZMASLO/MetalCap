@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Testing
 @testable import MetalCapCore
@@ -471,7 +472,10 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         first.cpuPower = 12.345
         var second = SystemSample(time: 1.5, gpuUtilization: 100, thermalState: 1)
         second.cpuPower = 14
+        first.gameMode = .on
+        second.gameMode = .paused
         capture.system = [first, second]
+        capture.window = GameWindow(width: 2560, height: 1440, fullScreen: true)
         return capture
     }
 
@@ -490,8 +494,8 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         let lines = CaptureExporter.systemCSV(capture, dialect: .standard).split(separator: "\n").map { $0.split(separator: ",", omittingEmptySubsequences: false) }
         #expect(lines.count == 3)
         #expect(lines[0].count == lines[1].count)
-        #expect(lines[0][0] == "time_s" && lines[0][1] == "gpu_load_percent" && lines[0].last == "thermal_state")
-        #expect(lines[1][0] == "0.50" && lines[1][1] == "90.0" && lines[1].last == "0")
+        #expect(lines[0][0] == "time_s" && lines[0][1] == "gpu_load_percent" && lines[0].last == "game_mode")
+        #expect(lines[1][0] == "0.50" && lines[1][1] == "90.0" && lines[1].last == "on" && lines[2].last == "paused")
         let power = lines[0].firstIndex(of: "cpu_power_w")!
         #expect(lines[1][power] == "12.35" && lines[2][power] == "14.00")
         // Values that were not recorded stay empty.
@@ -502,8 +506,8 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         let lines = CaptureExporter.summaryCSV([capture], dialect: .standard).split(separator: "\n")
         #expect(lines.count == 2)
         #expect(lines[1].hasPrefix(#""Game, The",game,"RT ""Ultra"", 1440p; MetalFX",2027-01-15T08:00:00Z,0.04,3,75.0,"#))
-        #expect(lines[1].contains(",MacBook Pro,\"Mac17,8\",Apple M5 Pro,6,20,48,27.0.1,95.0,100.0,"))
-        #expect(lines[0].split(separator: ",").count == 21 + 16)
+        #expect(lines[1].contains(",MacBook Pro,\"Mac17,8\",Apple M5 Pro,6,6 Super,20,48,27.0.1,2560,1440,yes,partOfCapture,95.0,100.0,"))
+        #expect(lines[0].split(separator: ",").count == 26 + 16)
 
         let polish = CaptureExporter.summaryCSV([capture], dialect: .semicolon).split(separator: "\n")[1]
         #expect(polish.hasPrefix(#""Game, The";game;"RT ""Ultra"", 1440p; MetalFX";2027-01-15T08:00:00Z;0,04;3;75,0;"#))
@@ -519,5 +523,43 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         #expect((object["metrics"] as? [String: Any])?["average"] as? Double == 75)
         #expect((object["frames"] as? [String: Any])?["frameTimesMs"] as? [Double] == [10, 20, 10])
         #expect((object["system"] as? [[String: Any]])?.count == 2)
+        #expect((object["window"] as? [String: Any])?["width"] as? Int == 2560)
+        #expect(object["gameMode"] as? String == "partOfCapture")
+    }
+}
+
+@Suite struct GameContextTests {
+    @Test func parsesGameModeMessages() {
+        #expect(GameModeState.parse("Game mode status is now on.") == .on)
+        #expect(GameModeState.parse("Game mode status is now paused.") == .paused)
+        #expect(GameModeState.parse("Game mode status is now off.") == .off)
+        #expect(GameModeState.parse("Game mode is now available.") == nil)
+        let line = #"{"eventMessage":"Game mode status is now on.","subsystem":"com.apple.gamepolicyd"}"#
+        #expect(GameModeMonitor.state(inLogLine: line) == .on)
+        #expect(GameModeMonitor.state(inLogLine: "Filtering the log data") == nil)
+    }
+
+    @Test func summarisesGameModeOverACapture() {
+        #expect(GameModeSummary(states: [.on, .on]) == .wholeCapture)
+        #expect(GameModeSummary(states: [.on, nil, .paused]) == .partOfCapture)
+        #expect(GameModeSummary(states: [.off, .paused]) == .off)
+        #expect(GameModeSummary(states: [nil, nil]) == nil)
+        #expect(GameModeSummary(states: []) == nil)
+    }
+
+    @Test func convertsWindowPointsToPixels() {
+        let display = (bounds: CGRect(x: 0, y: 0, width: 1728, height: 1117), pixelWidth: 3456)
+        let full = GameWindow(points: display.bounds, display: display)
+        #expect(full == GameWindow(width: 3456, height: 2234, fullScreen: true))
+        let windowed = GameWindow(points: CGRect(x: 100, y: 80, width: 480, height: 300), display: display)
+        #expect(windowed == GameWindow(width: 960, height: 600, fullScreen: false))
+        #expect(GameWindow(points: CGRect(x: 0, y: 0, width: 640, height: 480), display: nil).width == 640)
+    }
+
+    @Test func describesCoreTiers() {
+        let hardware = HardwareInfo(modelName: nil, modelIdentifier: "Mac17,8", chip: "Apple M5 Pro",
+                                    coreTiers: [.init(name: "Super", cores: 6), .init(name: "Performance", cores: 12)],
+                                    gpuCores: 20, memoryGB: 48, osVersion: "27.0.1", osBuild: "26A434")
+        #expect(hardware.coreTierDescription == "6 Super + 12 Performance")
     }
 }

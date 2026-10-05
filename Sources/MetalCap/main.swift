@@ -10,6 +10,8 @@ let arguments = CommandLine.arguments
 if let sampleIndex = arguments.firstIndex(of: "--sample") {
     let seconds = sampleIndex + 1 < arguments.count ? Int(arguments[sampleIndex + 1]) ?? 5 : 5
     let sampler = SystemSampler()
+    let gameMode = GameModeMonitor()
+    try? gameMode.start()
     _ = sampler.read(pids: [])
     let formatter = ISO8601DateFormatter()
     for _ in 0..<seconds {
@@ -23,7 +25,8 @@ if let sampleIndex = arguments.firstIndex(of: "--sample") {
               + "\"gpu_usage\":\(show(sample.gpuUtilization)),\"cpu_usage\":\(show(sample.cpuUsage)),"
               + "\"fast_active\":\(show(sample.fastClusterActive)),\"fast_mhz\":\(show(sample.fastClusterFrequency)),"
               + "\"second_active\":\(show(sample.secondClusterActive)),\"second_mhz\":\(show(sample.secondClusterFrequency)),"
-              + "\"gpu_mhz\":\(show(sample.gpuFrequency)),\"fan_rpm\":\(show(sample.fanSpeed))}")
+              + "\"gpu_mhz\":\(show(sample.gpuFrequency)),\"fan_rpm\":\(show(sample.fanSpeed)),"
+              + "\"game_mode\":\(gameMode.state.map { "\"\($0.rawValue)\"" } ?? "null")}")
         fflush(stdout)
     }
     exit(0)

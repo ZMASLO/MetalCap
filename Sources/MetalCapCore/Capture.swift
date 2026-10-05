@@ -26,6 +26,13 @@ public struct Capture: Codable, Identifiable, Equatable, Sendable {
     public var lowPowerMode: Bool?
     /// The machine the capture was recorded on.
     public var hardware: HardwareInfo?
+    /// The game's window during the capture.
+    public var window: GameWindow?
+
+    /// How much of the capture ran with Game Mode on; nil when it was not recorded.
+    public var gameMode: GameModeSummary? {
+        GameModeSummary(states: (system ?? []).map(\.gameMode))
+    }
 
     public init(id: UUID = UUID(), processName: String, startedAt: Date,
                 frameTimes: [Double], gpuTimes: [Double],
@@ -86,6 +93,8 @@ public final class CaptureRecorder {
     }
 
     public private(set) var isRecording = false
+    /// The process the last finished capture came from.
+    public private(set) var lastCapturePID: Int32?
     private var startTime = Date.distantPast
     private var stopTime = Date.distantFuture
     private var preferredPID: Int32?
@@ -156,6 +165,7 @@ public final class CaptureRecorder {
         let pid = preferredPID.flatMap { withFrames[$0] == nil ? nil : $0 }
             ?? withFrames.max { $0.value.frameTimes.count < $1.value.frameTimes.count }?.key
         guard let pid, let chosen = withFrames[pid] else { return nil }
+        lastCapturePID = pid
         var capture = Capture(processName: chosen.name, startedAt: startTime,
                               frameTimes: chosen.frameTimes, gpuTimes: chosen.gpuTimes,
                               wallDuration: stopTime == .distantFuture ? nil : stopTime.timeIntervalSince(startTime),

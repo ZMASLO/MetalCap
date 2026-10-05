@@ -35,6 +35,8 @@ public struct SystemSample: Codable, Equatable, Sendable {
     public var gpuFrequency: Double?
     /// Speed of the fastest fan, in revolutions per minute (0 while the fans are stopped).
     public var fanSpeed: Double?
+    /// Game Mode at the time of the sample.
+    public var gameMode: GameModeState?
     /// CPU load across all cores in percent (100 = every core busy).
     public var cpuUsage: Double?
     /// CPU used by the game in percent of one core (can exceed 100).

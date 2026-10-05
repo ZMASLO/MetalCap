@@ -88,6 +88,9 @@ final class AppModel: ObservableObject {
     private let recorder = CaptureRecorder()
     private let sampler = SystemSampler()
     private let hardware = HardwareInfo.current()
+    private let gameModeMonitor = GameModeMonitor()
+    /// The frontmost app's window when the current capture started, usually the game's.
+    private var startWindow: (pid: Int32, window: GameWindow?)?
     private var samplingTimer: Timer?
     /// Power conditions when the current capture started.
     private var startedOnBattery: Bool?
@@ -113,6 +116,7 @@ final class AppModel: ObservableObject {
         logSource.onEvent = { [weak self] event in
             Task { @MainActor in self?.handle(event, fromLog: true) }
         }
+        try? gameModeMonitor.start()
         do { try logSource.start() } catch {
             message = tr("Nie udało się uruchomić odczytu logu: ", "Could not start reading the log: ")
                 + error.localizedDescription
@@ -133,6 +137,7 @@ final class AppModel: ObservableObject {
 
     func shutdown() {
         logSource.stop()
+        gameModeMonitor.stop()
     }
 
     private func registerHotKey() {
@@ -246,12 +251,15 @@ final class AppModel: ObservableObject {
         } else {
             let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
             recorder.start(at: Date(), preferredPID: frontmost)
+            startWindow = frontmost.map { ($0, GameWindow.current(pid: $0)) }
             startedOnBattery = SystemSampler.isOnBattery
             startedInLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
             let timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self else { return }
-                    self.recorder.ingest(self.sampler.read(pids: self.recorder.candidatePIDs))
+                    var reading = self.sampler.read(pids: self.recorder.candidatePIDs)
+                    reading.sample.gameMode = self.gameModeMonitor.state
+                    self.recorder.ingest(reading)
                 }
             }
             timer.fire()
@@ -277,6 +285,9 @@ final class AppModel: ObservableObject {
         }
         capture.name = nameAliases[capture.processName]
         capture.hardware = hardware
+        if let pid = recorder.lastCapturePID {
+            capture.window = (startWindow?.pid == pid ? startWindow?.window : nil) ?? GameWindow.current(pid: pid)
+        }
         capture.onBattery = startedOnBattery
         capture.lowPowerMode = startedInLowPowerMode
         do {

@@ -66,6 +66,13 @@ Odczyty były porównane z mactop 2.1.6 na MacBooku Pro M5 Pro (macOS 27.0.1), w
 
 Każdy nowy wynik zapisuje komputer, na którym powstał: model, identyfikator modelu, układ, liczbę rdzeni CPU (z podziałem na klastry) i GPU, ilość RAM oraz wersję macOS. Linia ze sprzętem jest widoczna pod nagłówkiem wyniku.
 
+Pod sprzętem widać też liczbę i typ rdzeni CPU oraz liczbę rdzeni GPU, a dla nowych pomiarów:
+
+- **Okno gry** — rozmiar okna gry w pikselach i czy zajmowało cały ekran (z listy okien systemu, bez dodatkowych uprawnień). To rozdzielczość wyjściowa; gra może renderować w niższej i skalować obraz. W trybie okienkowym wymiar obejmuje pasek tytułu.
+- **Tryb gry** — czy był włączony przez cały pomiar, przez część, czy wcale; MetalCap śledzi komunikaty `gamepolicyd` w logu systemowym. Gdy nie działał przez cały pomiar, w nagłówku pojawia się uwaga.
+
+Stanu MetalFX i wewnętrznej rozdzielczości renderowania nie da się odczytać: Metal HUD pokazuje je na nakładce, ale nigdzie ich nie zapisuje.
+
 Przycisk „Eksportuj” przy wyniku zapisuje:
 
 - **Pełny wynik (JSON)** — metadane, sprzęt, metryki FPS, wszystkie klatki i serię metryk systemowych; pole `formatVersion` oznacza wersję układu pliku.
