@@ -421,19 +421,11 @@ struct CaptureDetailView: View {
                                   value: lowVariant == .average ? metrics.onePercentLowAverage : metrics.onePercentLowIntegral),
                         ])
                     }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(tr("Czas klatki", "Frame time")).font(.headline)
-                        FrameTimeChart(points: FrameTimeChart.points(for: capture.frameTimes))
-                            .frame(minHeight: 240, maxHeight: .infinity)
-                        // The average matches AVG: total time over frame count.
-                        if let range = MetricRange(capture.frameTimes.filter { $0 > 0 }) {
-                            RangeSummary(range: range) { String(format: "%.2f ms", $0) }
-                        }
-                    }
                     if let system = capture.system, !system.isEmpty {
-                        SystemSectionView(samples: system, duration: metrics.duration, averageFPS: metrics.average,
-                                          coreTiers: capture.hardware?.coreTiers.map(\.name) ?? [])
+                        SystemSectionView(samples: system, averageFPS: metrics.average)
                     }
+                    CaptureTimeline(frameTimes: capture.frameTimes, samples: capture.system ?? [],
+                                    duration: metrics.duration, coreTiers: capture.hardware?.coreTiers.map(\.name) ?? [])
                 }
                 .padding(20)
                 .frame(minHeight: geometry.size.height, alignment: .top)
@@ -655,54 +647,33 @@ struct MetricTile: View {
     }
 }
 
-/// GPU load, temperatures, CPU and memory use recorded alongside the frames.
-struct SystemSectionView: View {
-    let samples: [SystemSample]
-    let duration: Double
-    /// Average frame rate of the capture, for the frames-per-watt figure.
-    let averageFPS: Double
-    /// Names of the CPU core tiers, fastest first (e.g. "Super", "Performance"), when known.
-    var coreTiers: [String] = []
-
-    private var fastClusterName: String { coreTiers.first ?? tr("Szybki klaster", "Fast cluster") }
-    private var secondClusterName: String { coreTiers.dropFirst().first ?? tr("Drugi klaster", "Second cluster") }
-
-    private static func megabytes(_ value: Double) -> String {
+/// Value formats shared by the system tiles and the timeline.
+enum MetricFormat {
+    static func megabytes(_ value: Double) -> String {
         value >= 1024 ? String(format: "%.1f GB", value / 1024) : String(format: "%.0f MB", value)
     }
 
-    /// A value axis from zero to a little above the highest point.
-    private static func fromZero(_ series: [TimeSeriesChart.Series]) -> ClosedRange<Double> {
-        0...((series.flatMap { $0.points.map(\.value) }.max() ?? 1) * 1.15)
-    }
+    static func percent(_ value: Double) -> String { String(format: "%.0f%%", value) }
+    static func degrees(_ value: Double) -> String { String(format: "%.0f°C", value) }
+    static func megahertz(_ value: Double) -> String { String(format: "%.0f MHz", value) }
+    static func rpm(_ value: Double) -> String { String(format: "%.0f", value) }
+    static func watts(_ value: Double) -> String { String(format: value < 10 ? "%.1f W" : "%.0f W", value) }
+}
 
-    private static func percent(_ value: Double) -> String { String(format: "%.0f%%", value) }
-    private static func degrees(_ value: Double) -> String { String(format: "%.0f°C", value) }
-    private static func megahertz(_ value: Double) -> String { String(format: "%.0f MHz", value) }
-    private static func rpm(_ value: Double) -> String { String(format: "%.0f", value) }
-    private static func watts(_ value: Double) -> String { String(format: value < 10 ? "%.1f W" : "%.0f W", value) }
+/// Averages and peaks of the system metrics recorded alongside the frames.
+struct SystemSectionView: View {
+    let samples: [SystemSample]
+    /// Average frame rate of the capture, for the frames-per-watt figure.
+    let averageFPS: Double
 
     /// Temperature tile: the peak of the hottest sensor, with the mean across sensors underneath.
     private func temperatureTile(_ title: String, hottest: KeyPath<SystemSample, Double?>,
                                  average: KeyPath<SystemSample, Double?>) -> InfoTile? {
         guard let peak = samples.range(of: hottest)?.maximum else { return nil }
         let mean = samples.range(of: average)?.average
-        return InfoTile(title: title, value: Self.degrees(peak),
-                        detail: mean.map { "\(tr("maks., średnio", "peak, average")) \(Self.degrees($0))" }
+        return InfoTile(title: title, value: MetricFormat.degrees(peak),
+                        detail: mean.map { "\(tr("maks., średnio", "peak, average")) \(MetricFormat.degrees($0))" }
                             ?? tr("maksimum", "peak"))
-    }
-
-    /// Mean of the sensors where it was recorded, otherwise the hottest sensor (older captures).
-    private func temperatureSeries(_ name: String, average: KeyPath<SystemSample, Double?>,
-                                   hottest: KeyPath<SystemSample, Double?>) -> TimeSeriesChart.Series? {
-        series(name, average) ?? series(name, hottest)
-    }
-
-    private func series(_ name: String, _ metric: KeyPath<SystemSample, Double?>) -> TimeSeriesChart.Series? {
-        let points = samples.compactMap { sample in
-            sample[keyPath: metric].map { TimeSeriesChart.Point(time: sample.time, value: $0) }
-        }
-        return points.isEmpty ? nil : TimeSeriesChart.Series(id: name, points: points)
     }
 
     private var thermalStateName: String {
@@ -724,19 +695,19 @@ struct SystemSectionView: View {
 
     var body: some View {
         let tiles = [
-            tile(tr("Obciążenie GPU", "GPU load"), \.gpuUtilization, format: Self.percent),
+            tile(tr("Obciążenie GPU", "GPU load"), \.gpuUtilization, format: MetricFormat.percent),
             temperatureTile(tr("Temperatura CPU", "CPU temperature"), hottest: \.cpuTemperature, average: \.cpuTemperatureAverage),
             temperatureTile(tr("Temperatura GPU", "GPU temperature"), hottest: \.gpuTemperature, average: \.gpuTemperatureAverage),
-            tile(tr("RAM gry", "Game RAM"), \.processMemory, format: Self.megabytes, peakOnly: true),
-            tile(tr("CPU gry", "Game CPU"), \.processCPU, format: Self.percent),
+            tile(tr("RAM gry", "Game RAM"), \.processMemory, format: MetricFormat.megabytes, peakOnly: true),
+            tile(tr("CPU gry", "Game CPU"), \.processCPU, format: MetricFormat.percent),
             InfoTile(title: tr("Stan termiczny", "Thermal state"), value: thermalStateName,
                      detail: tr("najgorszy", "worst")),
         ].compactMap { $0 }
         let wholeMac = samples.range(of: \.systemPower)
         let powerTiles = [
-            tile(tr("Moc CPU", "CPU power"), \.cpuPower, format: Self.watts),
-            tile(tr("Moc GPU", "GPU power"), \.gpuPower, format: Self.watts),
-            tile(tr("Moc całego Maca", "Whole-Mac power"), \.systemPower, format: Self.watts),
+            tile(tr("Moc CPU", "CPU power"), \.cpuPower, format: MetricFormat.watts),
+            tile(tr("Moc GPU", "GPU power"), \.gpuPower, format: MetricFormat.watts),
+            tile(tr("Moc całego Maca", "Whole-Mac power"), \.systemPower, format: MetricFormat.watts),
             wholeMac.flatMap { range in
                 range.average > 0 && averageFPS.isFinite
                     ? InfoTile(title: tr("FPS na wat", "FPS per watt"),
@@ -745,29 +716,6 @@ struct SystemSectionView: View {
                     : nil
             },
         ].compactMap { $0 }
-        let power = [series("CPU", \.cpuPower), series("GPU", \.gpuPower),
-                     series(tr("Cały Mac", "Whole Mac"), \.systemPower)].compactMap { $0 }
-        let memory = [series(tr("Gra", "Game"), \.processMemory), series("GPU", \.gpuMemory)].compactMap { $0 }
-        let gameCPU = [series("CPU", \.processCPU)].compactMap { $0 }
-        let clusterActivity = [series(fastClusterName, \.fastClusterActive),
-                               series(secondClusterName, \.secondClusterActive)].compactMap { $0 }
-        let clocks = [series(fastClusterName, \.fastClusterFrequency), series(secondClusterName, \.secondClusterFrequency),
-                      series("GPU", \.gpuFrequency)].compactMap { $0 }
-        let fan = [series(tr("Wentylator", "Fan"), \.fanSpeed)].compactMap { $0 }
-        // A nil range lets the chart fit the data; temperatures read better without a zero baseline.
-        let charts: [(title: String, series: [TimeSeriesChart.Series], range: ClosedRange<Double>?, format: (Double) -> String)] = [
-            (tr("Obciążenie GPU (%)", "GPU load (%)"), [series("GPU", \.gpuUtilization)].compactMap { $0 }, 0...100, Self.percent),
-            (tr("Temperatura (°C)", "Temperature (°C)"),
-             [temperatureSeries("CPU", average: \.cpuTemperatureAverage, hottest: \.cpuTemperature),
-              temperatureSeries("GPU", average: \.gpuTemperatureAverage, hottest: \.gpuTemperature)].compactMap { $0 },
-             nil, Self.degrees),
-            (tr("Moc (W)", "Power (W)"), power, Self.fromZero(power), Self.watts),
-            (tr("Pamięć (MB)", "Memory (MB)"), memory, Self.fromZero(memory), Self.megabytes),
-            (tr("CPU gry (% jednego rdzenia)", "Game CPU (% of one core)"), gameCPU, Self.fromZero(gameCPU), Self.percent),
-            (tr("Aktywność klastrów CPU (%)", "CPU cluster activity (%)"), clusterActivity, 0...100, Self.percent),
-            (tr("Taktowanie (MHz)", "Clock (MHz)"), clocks, Self.fromZero(clocks), Self.megahertz),
-            (tr("Wentylator (obr./min)", "Fan (RPM)"), fan, Self.fromZero(fan), Self.rpm),
-        ].filter { !$0.series.isEmpty }
 
         VStack(alignment: .leading, spacing: 12) {
             Text("System").font(.headline)
@@ -778,20 +726,130 @@ struct SystemSectionView: View {
                 HStack(spacing: 12) {
                     ForEach(powerTiles.indices, id: \.self) { powerTiles[$0] }
                 }
-                Text(tr("Moc CPU jest szacowana z histogramów mocy klastrów, bo macOS nie udostępnia licznika energii CPU. Temperatury na wykresie to średnia z czujników.",
+                Text(tr("Moc CPU jest szacowana z histogramów mocy klastrów, bo macOS nie udostępnia licznika energii CPU. Temperatury na wykresach to średnia z czujników.",
                         "CPU power is estimated from per-cluster power histograms, because macOS does not expose the CPU energy counter. Chart temperatures are the mean across sensors."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 20, alignment: .top), GridItem(.flexible(), alignment: .top)],
-                      alignment: .leading, spacing: 16) {
-                ForEach(charts.indices, id: \.self) { index in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(charts[index].title).font(.subheadline).foregroundStyle(.secondary)
-                        TimeSeriesChart(series: charts[index].series, duration: duration,
-                                        range: charts[index].range, format: charts[index].format)
-                    }
+        }
+    }
+}
+
+/// The frame time and every system metric stacked on one time axis. Pointing at any chart shows
+/// the values of that moment in all of them, so events can be matched up (a stutter with a clock drop).
+struct CaptureTimeline: View {
+    let frameTimes: [Double]
+    let samples: [SystemSample]
+    /// Length of the capture in seconds.
+    let duration: Double
+    /// Names of the CPU core tiers, fastest first (e.g. "Super", "Performance"), when known.
+    var coreTiers: [String] = []
+    @ViewState private var hoverTime: Double?
+
+    /// - Parameter pointerAt: a moment to show as pointed at from the start (for snapshots).
+    init(frameTimes: [Double], samples: [SystemSample], duration: Double, coreTiers: [String] = [], pointerAt: Double? = nil) {
+        self.frameTimes = frameTimes
+        self.samples = samples
+        self.duration = duration
+        self.coreTiers = coreTiers
+        _hoverTime = ViewState(initialValue: pointerAt)
+    }
+
+    private var fastClusterName: String { coreTiers.first ?? tr("Szybki klaster", "Fast cluster") }
+    private var secondClusterName: String { coreTiers.dropFirst().first ?? tr("Drugi klaster", "Second cluster") }
+
+    /// A value axis from zero to a little above the highest point.
+    private static func fromZero(_ series: [TimeSeriesChart.Series]) -> ClosedRange<Double> {
+        0...((series.flatMap { $0.points.map(\.value) }.max() ?? 1) * 1.15)
+    }
+
+    private func series(_ name: String, _ metric: KeyPath<SystemSample, Double?>) -> TimeSeriesChart.Series? {
+        let points = samples.compactMap { sample in
+            sample[keyPath: metric].map { TimeSeriesChart.Point(time: sample.time, value: $0) }
+        }
+        return points.isEmpty ? nil : TimeSeriesChart.Series(id: name, points: points)
+    }
+
+    /// Mean of the sensors where it was recorded, otherwise the hottest sensor (older captures).
+    private func temperatureSeries(_ name: String, average: KeyPath<SystemSample, Double?>,
+                                   hottest: KeyPath<SystemSample, Double?>) -> TimeSeriesChart.Series? {
+        series(name, average) ?? series(name, hottest)
+    }
+
+    var body: some View {
+        let power = [series("CPU", \.cpuPower), series("GPU", \.gpuPower),
+                     series(tr("Cały Mac", "Whole Mac"), \.systemPower)].compactMap { $0 }
+        let memory = [series(tr("Gra", "Game"), \.processMemory), series("GPU", \.gpuMemory)].compactMap { $0 }
+        let gameCPU = [series("CPU", \.processCPU)].compactMap { $0 }
+        let clusterActivity = [series(fastClusterName, \.fastClusterActive),
+                               series(secondClusterName, \.secondClusterActive)].compactMap { $0 }
+        let clocks = [series(fastClusterName, \.fastClusterFrequency), series(secondClusterName, \.secondClusterFrequency),
+                      series("GPU", \.gpuFrequency)].compactMap { $0 }
+        let fan = [series(tr("Wentylator", "Fan"), \.fanSpeed)].compactMap { $0 }
+        // Ordered from load, through what it costs (clocks, power, heat), to memory and the game's own CPU use.
+        // A nil range lets the chart fit the data; temperatures read better without a zero baseline.
+        let charts: [(title: String, series: [TimeSeriesChart.Series], range: ClosedRange<Double>?, format: (Double) -> String)] = [
+            (tr("Obciążenie GPU (%)", "GPU load (%)"), [series("GPU", \.gpuUtilization)].compactMap { $0 }, 0...100, MetricFormat.percent),
+            (tr("Aktywność klastrów CPU (%)", "CPU cluster activity (%)"), clusterActivity, 0...100, MetricFormat.percent),
+            (tr("Taktowanie (MHz)", "Clock (MHz)"), clocks, Self.fromZero(clocks), MetricFormat.megahertz),
+            (tr("Moc (W)", "Power (W)"), power, Self.fromZero(power), MetricFormat.watts),
+            (tr("Temperatura (°C)", "Temperature (°C)"),
+             [temperatureSeries("CPU", average: \.cpuTemperatureAverage, hottest: \.cpuTemperature),
+              temperatureSeries("GPU", average: \.gpuTemperatureAverage, hottest: \.gpuTemperature)].compactMap { $0 },
+             nil, MetricFormat.degrees),
+            (tr("Wentylator (obr./min)", "Fan (RPM)"), fan, Self.fromZero(fan), MetricFormat.rpm),
+            (tr("Pamięć (MB)", "Memory (MB)"), memory, Self.fromZero(memory), MetricFormat.megabytes),
+            (tr("CPU gry (% jednego rdzenia)", "Game CPU (% of one core)"), gameCPU, Self.fromZero(gameCPU), MetricFormat.percent),
+        ].filter { !$0.series.isEmpty }
+
+        VStack(alignment: .leading, spacing: 14) {
+            Text(tr("Przebieg pomiaru", "Capture timeline")).font(.headline)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(tr("Czas klatki (ms)", "Frame time (ms)")).font(.subheadline).foregroundStyle(.secondary)
+                FrameTimeChart(points: FrameTimeChart.points(for: frameTimes), duration: duration,
+                               hoverTime: $hoverTime, showsTimeAxis: charts.isEmpty)
+                    .frame(height: 200)
+                // The average matches AVG: total time over frame count.
+                if let range = MetricRange(frameTimes.filter { $0 > 0 }) {
+                    RangeSummary(range: range) { String(format: "%.2f ms", $0) }
+                }
+            }
+            ForEach(charts.indices, id: \.self) { index in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(charts[index].title).font(.subheadline).foregroundStyle(.secondary)
+                    TimeSeriesChart(series: charts[index].series, duration: duration, range: charts[index].range,
+                                    format: charts[index].format, hoverTime: $hoverTime,
+                                    showsTimeAxis: index == charts.count - 1)
+                }
+            }
+            Text(tr("Czas od początku pomiaru (s)", "Time since the start of the capture (s)"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Axes shared by the timeline charts. Value labels get a fixed width so every plot area has the
+/// same width and the time axes, and the pointer line, line up from chart to chart.
+extension View {
+    func timelineAxes(showsTimeAxis: Bool) -> some View {
+        chartYAxis {
+            AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    Text(value.as(Double.self).map { String(format: "%.0f", $0) } ?? "")
+                        .monospacedDigit()
+                        .frame(width: 44, alignment: .leading)
+                }
+            }
+        }
+        .chartXAxis {
+            AxisMarks { _ in
+                AxisGridLine()
+                if showsTimeAxis {
+                    AxisTick()
+                    AxisValueLabel()
                 }
             }
         }
@@ -855,7 +913,10 @@ struct TimeSeriesChart: View {
     /// Fixed value axis, or nil to fit the data.
     let range: ClosedRange<Double>?
     let format: (Double) -> String
-    @ViewState private var hoverTime: Double?
+    /// The moment under the pointer, shared by every chart of the timeline.
+    @Binding var hoverTime: Double?
+    var height: CGFloat = 90
+    var showsTimeAxis = true
 
     /// Categorical colours in a fixed order, with separate steps for light and dark appearance.
     private static let seriesColors: [Color] = [
@@ -881,7 +942,7 @@ struct TimeSeriesChart: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            chart.frame(height: 150)
+            chart.frame(height: height)
             // These rows double as the legend.
             ForEach(Array(series.enumerated()), id: \.offset) { index, series in
                 if let range = MetricRange(series.points.map(\.value)) {
@@ -924,6 +985,7 @@ struct TimeSeriesChart: View {
         .chartLegend(.hidden)
         .chartXScale(domain: 0...max(duration, 1))
         .chartYScale(domain: range ?? fittedRange)
+        .timelineAxes(showsTimeAxis: showsTimeAxis)
         .chartOverlay { proxy in
             GeometryReader { geometry in
                 Rectangle().fill(.clear).contentShape(Rectangle())
@@ -977,7 +1039,13 @@ struct FrameTimeChart: View {
     }
 
     let points: [Point]
-    @ViewState private var hovered: Point?
+    /// Length of the capture in seconds.
+    let duration: Double
+    /// The moment under the pointer, shared by every chart of the timeline.
+    @Binding var hoverTime: Double?
+    var showsTimeAxis = true
+
+    private var hovered: Point? { hoverTime.flatMap(nearestPoint) }
 
     /// One point per frame; long captures are reduced to the slowest frame per bucket so spikes survive.
     static func points(for frameTimes: [Double], limit: Int = 3000) -> [Point] {
@@ -1015,19 +1083,19 @@ struct FrameTimeChart: View {
             }
         }
         // Span exactly the capture; the automatic axis rounds up and leaves empty space at the end.
-        .chartXScale(domain: 0...max(points.last?.time ?? 1, 1))
-        .chartXAxisLabel(tr("Czas (s)", "Time (s)"))
-        .chartYAxisLabel("ms")
+        .chartXScale(domain: 0...max(duration, 1))
+        .timelineAxes(showsTimeAxis: showsTimeAxis)
         .chartOverlay { proxy in
             GeometryReader { geometry in
                 Rectangle().fill(.clear).contentShape(Rectangle())
                     .onContinuousHover { phase in
                         guard case .active(let location) = phase, let frame = proxy.plotFrame,
-                              let time: Double = proxy.value(atX: location.x - geometry[frame].origin.x) else {
-                            hovered = nil
+                              let time: Double = proxy.value(atX: location.x - geometry[frame].origin.x),
+                              (0...duration).contains(time) else {
+                            hoverTime = nil
                             return
                         }
-                        hovered = nearestPoint(to: time)
+                        hoverTime = time
                     }
             }
         }

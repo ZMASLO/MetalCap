@@ -6,7 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Needed when run as a bare executable (`swift run`) rather than from the .app bundle.
         NSApp.setActivationPolicy(.regular)
 
-        // `--snapshot <png> [--size WxH] [--show settings|overlay|unlock|rename|system] [--lang pl|en] [--scroll N]` renders the main
+        // `--snapshot <png> [--size WxH] [--show settings|overlay|unlock|rename|system] [--lang pl|en] [--scroll N] [--pointer seconds]` renders the main
         // window, or the requested sheet, to a file and quits (for UI checks).
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: "--snapshot"), index + 1 < arguments.count {
@@ -15,10 +15,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if sheet == "system" {
                 guard let capture = AppModel.shared.captures.first(where: { $0.system != nil }),
                       let samples = capture.system, let metrics = capture.metrics else { exit(1) }
-                let renderer = ImageRenderer(content: SystemSectionView(samples: samples, duration: metrics.duration,
-                                                                        averageFPS: metrics.average,
-                                                                        coreTiers: capture.hardware?.coreTiers.map(\.name) ?? [])
-                    .padding(20).frame(width: 900).background(Color(nsColor: .windowBackgroundColor)))
+                let renderer = ImageRenderer(content: VStack(alignment: .leading, spacing: 20) {
+                    SystemSectionView(samples: samples, averageFPS: metrics.average)
+                    CaptureTimeline(frameTimes: capture.frameTimes, samples: samples, duration: metrics.duration,
+                                    coreTiers: capture.hardware?.coreTiers.map(\.name) ?? [],
+                                    pointerAt: arguments.firstIndex(of: "--pointer")
+                                        .flatMap { $0 + 1 < arguments.count ? Double(arguments[$0 + 1]) : nil })
+                }
+                .padding(20).frame(width: 900).background(Color(nsColor: .windowBackgroundColor)))
                 renderer.scale = 2
                 guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
                       let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { exit(1) }
