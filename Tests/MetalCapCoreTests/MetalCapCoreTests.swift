@@ -176,6 +176,14 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         try store.save(older)
         try FileManager.default.removeItem(at: directory.appendingPathComponent("legacy.json"))
 
+        // Start times keep their milliseconds (they are never whole seconds).
+        let precise = Capture(processName: "c", startedAt: Date(timeIntervalSince1970: 3_000.1234),
+                              frameTimes: [10], gpuTimes: [1])
+        try store.save(precise)
+        let reloaded = try #require(store.loadAll().first { $0.id == precise.id })
+        #expect(abs(reloaded.startedAt.timeIntervalSince(precise.startedAt)) < 0.001)
+        try store.delete(precise.id)
+
         try store.delete(newer.id)
         #expect(store.loadAll() == [older])
     }

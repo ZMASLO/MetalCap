@@ -87,7 +87,12 @@ private func verify(_ capture: Capture) throws {
     defer { try? FileManager.default.removeItem(at: directory) }
     let store = CaptureStore(directory: directory)
     try store.save(capture)
-    #expect(store.loadAll() == [capture])
+    let loaded = try #require(store.loadAll().first)
+    // Files keep the start time to the millisecond; everything else must come back exactly.
+    #expect(abs(loaded.startedAt.timeIntervalSince(capture.startedAt)) < 0.001)
+    var sameStart = loaded
+    sameStart.startedAt = capture.startedAt
+    #expect(sameStart == capture)
 
     // Exports carry the same numbers.
     let json = try #require(try JSONSerialization.jsonObject(with: CaptureExporter.json(capture)) as? [String: Any])
