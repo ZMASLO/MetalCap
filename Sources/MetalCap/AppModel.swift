@@ -86,7 +86,8 @@ final class AppModel: ObservableObject {
     private let store = CaptureStore(directory: ProcessInfo.processInfo.environment["METALCAP_CAPTURES_DIR"]
         .map { URL(fileURLWithPath: $0, isDirectory: true) })
     private let recorder = CaptureRecorder()
-    private let sampler = SystemSampler()
+    /// Created in the background at launch: discovering the sensors takes most of a second.
+    private var sampler: SystemSampler?
     private let hardware = HardwareInfo.current()
     private let gameModeMonitor = GameModeMonitor()
     /// The frontmost app's window when the current capture started, usually the game's.
@@ -104,9 +105,21 @@ final class AppModel: ObservableObject {
             .flatMap { try? JSONDecoder().decode(KeyCombo.self, from: $0) } ?? .default
         hudConfiguration = UserDefaults.standard.data(forKey: "hudConfiguration")
             .flatMap { try? JSONDecoder().decode(HUDConfiguration.self, from: $0) } ?? HUDConfiguration()
-        captures = store.loadAll()
-        selection = captures.first?.id
         showingUnlockPrompt = !logUnlocked && !skipUnlockPrompt
+        let store = store
+        Task.detached(priority: .userInitiated) {
+            let stored = store.loadAll()
+            await MainActor.run {
+                // A capture finished while loading is already in the list; keep it first.
+                let known = Set(self.captures.map(\.id))
+                self.captures += stored.filter { !known.contains($0.id) }
+                if self.selection == nil { self.selection = self.captures.first?.id }
+            }
+        }
+        Task.detached(priority: .utility) {
+            let sampler = SystemSampler()
+            await MainActor.run { self.sampler = sampler }
+        }
 
         GlobalHotKey.shared.onPress = { [weak self] in
             Task { @MainActor in self?.toggleCapture() }
@@ -122,7 +135,7 @@ final class AppModel: ObservableObject {
                 + error.localizedDescription
         }
 
-        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+        Self.schedule(every: 2) { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
                 // Picks up a profile installed or removed in System Settings.
@@ -133,6 +146,14 @@ final class AppModel: ObservableObject {
                 self.frameDataRedacted = false
             }
         }
+    }
+
+    /// A repeating timer that also fires while a menu is open or a slider is dragged.
+    @discardableResult
+    private static func schedule(every interval: TimeInterval, _ action: @escaping @Sendable () -> Void) -> Timer {
+        let timer = Timer(timeInterval: interval, repeats: true) { _ in action() }
+        RunLoop.main.add(timer, forMode: .common)
+        return timer
     }
 
     func shutdown() {
@@ -254,10 +275,10 @@ final class AppModel: ObservableObject {
             startWindow = frontmost.map { ($0, GameWindow.current(pid: $0)) }
             startedOnBattery = SystemSampler.isOnBattery
             startedInLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
-            let timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            let timer = Self.schedule(every: 1) { [weak self] in
                 Task { @MainActor in
-                    guard let self else { return }
-                    var reading = self.sampler.read(pids: self.recorder.candidatePIDs)
+                    guard let self, let sampler = self.sampler else { return }
+                    var reading = sampler.read(pids: self.recorder.candidatePIDs)
                     reading.sample.gameMode = self.gameModeMonitor.state
                     self.recorder.ingest(reading)
                 }
@@ -379,6 +400,7 @@ final class AppModel: ObservableObject {
 
     func delete(_ id: Capture.ID) {
         try? store.delete(id)
+        CaptureCache.shared.forget(id)
         captures.removeAll { $0.id == id }
         if selection == id { selection = captures.first?.id }
     }

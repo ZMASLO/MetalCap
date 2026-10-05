@@ -2,6 +2,34 @@ import Charts
 import MetalCapCore
 import SwiftUI
 
+/// Figures derived from a capture's frames. They are costly for long captures and the frames never
+/// change, so they are computed once per capture instead of on every redraw (the shared pointer
+/// redraws the whole result view on each mouse move).
+@MainActor
+final class CaptureCache {
+    struct Entry {
+        let metrics: FrameMetrics?
+        let points: [FramePoint]
+        let frameTimeRange: MetricRange?
+    }
+
+    static let shared = CaptureCache()
+    private var entries: [Capture.ID: Entry] = [:]
+
+    func entry(for capture: Capture) -> Entry {
+        if let entry = entries[capture.id] { return entry }
+        let entry = Entry(metrics: capture.metrics,
+                          points: FrameTimeline.points(frameTimes: capture.frameTimes),
+                          frameTimeRange: MetricRange(capture.frameTimes.filter { $0 > 0 }))
+        entries[capture.id] = entry
+        return entry
+    }
+
+    func forget(_ id: Capture.ID) {
+        entries[id] = nil
+    }
+}
+
 private func fps(_ value: Double) -> String {
     value.isFinite ? String(format: "%.1f", value) : "–"
 }
@@ -23,7 +51,7 @@ struct MainView: View {
                     HStack {
                         Text(formatted(capture.startedAt, date: .abbreviated, time: .shortened))
                         Spacer()
-                        Text("\(fps(capture.metrics?.average ?? .nan)) FPS")
+                        Text("\(fps(CaptureCache.shared.entry(for: capture).metrics?.average ?? .nan)) FPS")
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -406,7 +434,7 @@ struct CaptureDetailView: View {
     @ViewState private var hoverTime: Double?
 
     var body: some View {
-        if let metrics = capture.metrics {
+        if let metrics = CaptureCache.shared.entry(for: capture).metrics {
             // The chart takes whatever height is left; the page scrolls only when the window is too short.
             GeometryReader { geometry in
               ScrollView {
@@ -642,7 +670,8 @@ struct SystemSectionView: View {
     @Binding var hoverTime: Double?
 
     private var samples: [SystemSample] { capture.system ?? [] }
-    private var duration: Double { capture.metrics?.duration ?? 0 }
+    private var cached: CaptureCache.Entry { CaptureCache.shared.entry(for: capture) }
+    private var duration: Double { cached.metrics?.duration ?? 0 }
 
     /// "CPU: 18 rdzeni (6 Super + 12 Performance) · GPU: 20 rdzeni"
     private func coresLine(_ hardware: HardwareInfo) -> String {
@@ -781,10 +810,10 @@ struct SystemSectionView: View {
     private var frameTime: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(tr("Czas klatki (ms)", "Frame time (ms)")).font(.headline)
-            FrameTimeChart(points: FrameTimeChart.points(for: capture.frameTimes), duration: duration, hoverTime: $hoverTime)
+            FrameTimeChart(points: cached.points, duration: duration, hoverTime: $hoverTime)
                 .frame(height: 220)
             // The average matches AVG: total time over frame count.
-            if let range = MetricRange(capture.frameTimes.filter { $0 > 0 }) {
+            if let range = cached.frameTimeRange {
                 RangeSummary(range: range) { String(format: "%.2f ms", $0) }
             }
         }
@@ -1093,14 +1122,12 @@ struct MetricBarChart: View {
     }
 }
 
+extension FramePoint: @retroactive Identifiable {
+    public var id: Int { index }
+}
+
 struct FrameTimeChart: View {
-    struct Point: Identifiable {
-        let id: Int
-        /// Seconds since the start of the capture.
-        let time: Double
-        /// Frame time in milliseconds.
-        let frameTime: Double
-    }
+    typealias Point = FramePoint
 
     let points: [Point]
     /// Length of the capture in seconds.
@@ -1110,20 +1137,6 @@ struct FrameTimeChart: View {
     var showsTimeAxis = true
 
     private var hovered: Point? { hoverTime.flatMap(nearestPoint) }
-
-    /// One point per frame; long captures are reduced to the slowest frame per bucket so spikes survive.
-    static func points(for frameTimes: [Double], limit: Int = 3000) -> [Point] {
-        var elapsed = 0.0
-        let all = frameTimes.enumerated().map { index, frameTime -> Point in
-            elapsed += frameTime / 1000
-            return Point(id: index, time: elapsed, frameTime: frameTime)
-        }
-        guard all.count > limit else { return all }
-        let bucket = Int((Double(all.count) / Double(limit)).rounded(.up))
-        return stride(from: 0, to: all.count, by: bucket).map { start in
-            all[start..<min(start + bucket, all.count)].max { $0.frameTime < $1.frameTime }!
-        }
-    }
 
     var body: some View {
         Chart {

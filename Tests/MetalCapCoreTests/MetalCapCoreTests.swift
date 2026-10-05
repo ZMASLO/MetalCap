@@ -570,3 +570,52 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         #expect(LogStream.restartDelay(attempt: 1000) == 30)
     }
 }
+
+@Suite struct FrameTimelineTests {
+    @Test func keepsEveryFrameOfShortCaptures() {
+        let points = FrameTimeline.points(frameTimes: [10, 20, 10], limit: 10)
+        #expect(points.map(\.frameTime) == [10, 20, 10])
+        #expect(points.map(\.time) == [0.01, 0.03, 0.04])
+        #expect(FrameTimeline.points(frameTimes: [], limit: 10).isEmpty)
+    }
+
+    @Test func keepsTheSlowestFrameOfEachBucket() {
+        // 10 frames into at most 3 points: buckets of 4, 4 and 2.
+        let frames: [Double] = [10, 50, 10, 10, 10, 10, 10, 70, 10, 30]
+        let points = FrameTimeline.points(frameTimes: frames, limit: 3)
+        #expect(points.map(\.frameTime) == [50, 70, 30])
+        #expect(points.map(\.index) == [1, 7, 9])
+        #expect(abs(points[2].time - frames.reduce(0, +) / 1000) < 1e-9)
+    }
+}
+
+/// A ten-minute capture at about 120 FPS: the work that runs when such a result is opened or exported.
+@Suite struct PerformanceTests {
+    private static let frames: [Double] = (0..<72_000).map { index -> Double in
+        let jitter = Double(index % 97) / 10
+        let stutter: Double = index % 5_000 == 0 ? 120 : 0
+        return 8 + jitter + stutter
+    }
+
+    private func seconds(_ work: () -> Void) -> Double {
+        let start = DispatchTime.now()
+        work()
+        return Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1e9
+    }
+
+    @Test func frameMetrics() {
+        let time = seconds { _ = FrameMetrics(frameTimes: Self.frames) }
+        #expect(time < 0.3, "\(time) s")
+    }
+
+    @Test func chartPoints() {
+        let time = seconds { _ = FrameTimeline.points(frameTimes: Self.frames) }
+        #expect(time < 0.1, "\(time) s")
+    }
+
+    @Test func frameExport() {
+        let capture = Capture(processName: "game", startedAt: Date(), frameTimes: Self.frames, gpuTimes: Self.frames)
+        let time = seconds { _ = CaptureExporter.framesCSV(capture, dialect: .standard) }
+        #expect(time < 3, "\(time) s")
+    }
+}
