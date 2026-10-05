@@ -7,7 +7,7 @@ import Foundation
 /// lines are still delivered, with `sample.isRedacted` set and no frames.
 public final class LogStreamSource {
     public var onEvent: ((HUDEvent) -> Void)?
-    private var process: Process?
+    let stream = LogStream(predicate: "subsystem == \"com.apple.metal.hud\" AND eventMessage BEGINSWITH \"metal-HUD:\"")
 
     private struct Entry: Decodable {
         var eventMessage: String
@@ -23,39 +23,23 @@ public final class LogStreamSource {
         return formatter
     }()
 
-    public init() {}
+    public init() {
+        let decoder = JSONDecoder()
+        stream.onLine = { [weak self] line in
+            guard let entry = try? decoder.decode(Entry.self, from: Data(line.utf8)),
+                  let sample = HUDLogParser.parse(entry.eventMessage) else { return }
+            let time = Self.timestampFormatter.date(from: entry.timestamp) ?? Date()
+            let name = URL(fileURLWithPath: entry.processImagePath).lastPathComponent
+            self?.onEvent?(HUDEvent(time: time, pid: entry.processID, processName: name, sample: sample))
+        }
+    }
 
     public func start() throws {
-        guard process == nil else { return }
-        let process = Process()
-        // Absolute path: `log` is also a zsh builtin.
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/log")
-        process.arguments = [
-            "stream", "--style", "ndjson", "--predicate",
-            "subsystem == \"com.apple.metal.hud\" AND eventMessage BEGINSWITH \"metal-HUD:\"",
-        ]
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-
-        var buffer = LineBuffer()
-        let decoder = JSONDecoder()
-        output.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            for line in buffer.append(handle.availableData) {
-                guard let entry = try? decoder.decode(Entry.self, from: Data(line.utf8)),
-                      let sample = HUDLogParser.parse(entry.eventMessage) else { continue }
-                let time = Self.timestampFormatter.date(from: entry.timestamp) ?? Date()
-                let name = URL(fileURLWithPath: entry.processImagePath).lastPathComponent
-                self?.onEvent?(HUDEvent(time: time, pid: entry.processID, processName: name, sample: sample))
-            }
-        }
-        try process.run()
-        self.process = process
+        try stream.start()
     }
 
     public func stop() {
-        process?.terminate()
-        process = nil
+        stream.stop()
     }
 }
 

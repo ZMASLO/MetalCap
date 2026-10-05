@@ -79,9 +79,14 @@ public final class GameModeMonitor: @unchecked Sendable {
 
     private let lock = NSLock()
     private var latest: GameModeState?
-    private var stream: Process?
+    private let stream = LogStream(predicate: GameModeMonitor.predicate)
+    private var started = false
 
-    public init() {}
+    public init() {
+        stream.onLine = { [weak self] line in
+            if let state = Self.state(inLogLine: line) { self?.update(state) }
+        }
+    }
 
     /// The most recent state, or nil until one has been seen.
     public var state: GameModeState? {
@@ -97,21 +102,9 @@ public final class GameModeMonitor: @unchecked Sendable {
     }
 
     public func start() throws {
-        guard stream == nil else { return }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/log")
-        process.arguments = ["stream", "--style", "ndjson", "--predicate", Self.predicate]
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        var buffer = LineBuffer()
-        output.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            for line in buffer.append(handle.availableData) {
-                if let state = Self.state(inLogLine: line) { self?.update(state) }
-            }
-        }
-        try process.run()
-        stream = process
+        guard !started else { return }
+        started = true
+        try stream.start()
 
         // The stream only sees changes from now on; the last earlier one gives the current state.
         DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -131,8 +124,8 @@ public final class GameModeMonitor: @unchecked Sendable {
     }
 
     public func stop() {
-        stream?.terminate()
-        stream = nil
+        stream.stop()
+        started = false
     }
 
     private struct Entry: Decodable {

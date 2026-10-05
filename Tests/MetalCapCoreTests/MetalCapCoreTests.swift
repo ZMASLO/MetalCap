@@ -563,3 +563,10 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         #expect(hardware.coreTierDescription == "6 Super + 12 Performance")
     }
 }
+
+@Suite struct LogStreamTests {
+    @Test func restartPauseGrowsAndLevelsOff() {
+        #expect((0..<7).map(LogStream.restartDelay(attempt:)) == [1, 2, 4, 8, 16, 30, 30])
+        #expect(LogStream.restartDelay(attempt: 1000) == 30)
+    }
+}
