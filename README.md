@@ -1,135 +1,55 @@
 # MetalCap
 
-<img src="Resources/AppIcon.png" width="128" alt="Ikona MetalCap">
+<img src="Resources/AppIcon.png" width="128" alt="MetalCap icon">
 
-Companion do benchmarków gier na macOS — odpowiednik CapFrameX. Przechwytuje czasy klatek z Metal Performance HUD i liczy AVG, P1 oraz 1% Low tak samo jak CapFrameX.
+[Polski](README.pl.md)
 
-## Budowanie
+Frame time capture for games on macOS - the macOS counterpart of CapFrameX.
 
-Wystarczą Command Line Tools (Xcode nie jest potrzebny).
+## Where the measurements come from
 
-```sh
-swift test              # testy rdzenia
-Scripts/make-app.sh     # buduje build/MetalCap.app
-open build/MetalCap.app
-```
+Frame data comes from the Metal Performance HUD, Apple's official performance tool built into macOS. MetalCap does not measure frames itself - it collects what the HUD reports, calculates the metrics and presents them.
 
-Ikonę generuje `swift Scripts/make-icon.swift` (zapisuje `Resources/AppIcon.icns`); wersję paczki ustawia zmienna `VERSION` (domyślnie 1.0.0), np. `VERSION=1.1.0 Scripts/make-app.sh`. Wersja jest widoczna na dole okna ustawień.
+## Features
 
-### Testy
+- AVG, P1, 1% Low and 0.1% Low, calculated the same way as in CapFrameX
+- Start and stop with a global shortcut, with a sound for each
+- Frame time chart and system metrics: GPU load, CPU and GPU temperature, power, clocks, fan, memory
+- Hardware, game window and Game Mode saved with every result
+- Comments, renaming and sorting of results
+- Export to JSON and CSV
+- English and Polish
 
-- `swift test` — testy jednostkowe rdzenia (statystyki, parser, rejestrator, eksport, odczyty systemowe); działają wszędzie, także w CI.
-- `Scripts/e2e.sh` — testy całościowe: uruchamiają małą aplikację Metal (`MetalCapProbe`, 60 FPS) i mierzą ją tak jak MetalCap — przez jej wyjście (ścieżka „Uruchom grę…”), przez log systemowy (ścieżka Steam/CrossOver, wymaga zainstalowanego profilu) oraz trybem `MetalCap --run`. Sprawdzają AVG i medianę ≈ 60 FPS, liczbę klatek, pokrycie czasu pomiaru, próbki systemowe, zapis i eksport. Wymagają odblokowanego Maca z włączonym ekranem, więc uruchamia się je tylko lokalnie; bez skryptu są pomijane.
+## Requirements
 
-### CI i wydania
+Mac with Apple silicon, macOS 14 or later (tested on macOS 27).
 
-- **CI** (`.github/workflows/ci.yml`): przy każdym pushu do `main` i pull requeście buduje projekt, uruchamia testy, składa `MetalCap.app` i dołącza ją jako artefakt.
-- **Wydanie** (`.github/workflows/release.yml`): push tagu `v*` (np. `git tag v1.0.0 && git push origin v1.0.0`) uruchamia testy, buduje aplikację z tą wersją i publikuje wydanie GitHub z plikiem `MetalCap-<wersja>.zip`.
+## Installation
 
-Aplikacja jest podpisana ad hoc i nienotaryzowana, więc po pobraniu macOS zablokuje pierwsze uruchomienie; trzeba ją otworzyć z menu kontekstowego („Otwórz”) albo zezwolić w Ustawieniach systemowych → Prywatność i ochrona.
+Download `MetalCap-<version>.zip` from Releases and move `MetalCap.app` to Applications. The app is not notarized, so open it the first time with right-click - Open.
 
-## Użycie
+## Usage
 
-1. Uruchom MetalCap. W pasku menu pojawi się ikona, a na ekranie okno z przechwyceniami.
-2. Uruchom grę z Metal HUD — na jeden z dwóch sposobów opisanych niżej.
-3. Naciśnij skrót (domyślnie ⌃⌥R), żeby zacząć pomiar; usłyszysz dźwięk. Naciśnij ponownie, żeby skończyć — drugi dźwięk.
-4. Wynik pojawi się na liście: AVG, P1, 1% Low i wykres czasu klatki.
+1. Turn on Metal HUD with the switch in MetalCap, then restart the game and its launcher (Steam, CrossOver). Alternatively, start the game with "Launch game..." in MetalCap.
+2. For games started from Steam or CrossOver, install the logging profile MetalCap offers at first launch (System Settings - General - Device Management). Without it macOS hides frame times of other apps.
+3. In the game, press the shortcut (default Control-Option-R) to start and again to stop. The Metal HUD must stay visible.
+4. The result appears in the list. Changes to the overlay settings take effect after the game is restarted.
 
-Skrót i sposób liczenia 1% Low zmienisz w ustawieniach (ikona zębatki).
+## Metrics
 
-HUD musi być widoczny podczas pomiaru: po ukryciu (⇧F9) macOS przestaje aktualizować czasy klatek.
+- AVG - number of frames divided by the total time.
+- P1, P5, median and other percentiles - R-8 percentiles of the frame rate, as in CapFrameX.
+- 1% Low - either the mean of the slowest 1% of frames (Average) or the frame at which the slowest frames add up to 1% of the time (Integral, as in MSI Afterburner); chosen in settings.
+- CPU power is an estimate from per-cluster power histograms, because macOS does not expose the CPU energy counter.
 
-## Lista wyników
-
-- **Komentarz**: pole pod nagłówkiem wyniku, np. na ustawienia grafiki; widać go też na liście.
-- **Nazwa**: ikona ołówka przy nazwie albo „Zmień nazwę…” w menu kontekstowym. Nazwę można zastosować do wszystkich wyników tego samego procesu i przyszłych pomiarów.
-- **Sortowanie**: nad listą wybór „Data” lub „Nazwa gry” i przycisk kierunku.
-
-## Metryki systemowe
-
-W trakcie pomiaru MetalCap raz na sekundę zapisuje stan systemu i pokazuje go w sekcji „System” pod wykresem czasu klatki:
-
-- **Obciążenie i pamięć GPU** — ze statystyk sterownika GPU w rejestrze systemowym.
-- **Temperatura CPU i GPU** — klucze SMC `Tp…`, `Te…`, `Ts…` (rdzenie CPU) i `Tg…` (GPU), ten sam dobór co w mactop. Wykres pokazuje średnią z czujników, kafelek szczyt najcieplejszego. Nazwy kluczy są nieudokumentowane i wykrywane przy starcie.
-- **Moc GPU** — licznik energii „GPU Energy” z IOReport.
-- **Moc CPU** — licznik „CPU Energy”; na macOS 27 zwraca on zero, więc moc jest szacowana z histogramów mocy klastrów (grupy PMP), tak jak robi to mactop.
-- **Moc całego Maca** — klucz SMC `PSTR` (zapasowo `PDTR`, `PD0R`); z niej liczony jest wskaźnik „FPS na wat”.
-- **Klastry CPU, taktowanie i wentylator** — aktywność i taktowanie każdego klastra rdzeni oraz taktowanie GPU z IOReport (stany wydajności i tabele częstotliwości menedżera zasilania), obroty wentylatora z kluczy SMC `F<n>Ac`. Klaster wyłączony albo bezczynny nie liczy się jako aktywny.
-- **CPU i RAM gry** — czas procesora i zajętość pamięci procesu, z którego pochodzą klatki.
-- **Stan termiczny**, zasilanie z baterii i tryb niskiego zużycia energii — jako uwagi w nagłówku wyniku.
-
-Nic z tego nie wymaga uprawnień administratora. Wyniki zapisane wcześniej nie mają tej sekcji.
-
-Odczyty były porównane z mactop 2.1.6 na MacBooku Pro M5 Pro (macOS 27.0.1), w spoczynku i przy obciążeniu CPU: temperatury zgodne do 0,8°C, moc CPU do 2%, moc całego Maca poniżej 1%. `MetalCap --sample 10` wypisuje odczyty co sekundę, żeby takie porównanie dało się powtórzyć.
-
-## Sprzęt i eksport
-
-Każdy nowy wynik zapisuje komputer, na którym powstał: model, identyfikator modelu, układ, liczbę rdzeni CPU (z podziałem na klastry) i GPU, ilość RAM oraz wersję macOS. Linia ze sprzętem jest widoczna pod nagłówkiem wyniku.
-
-Pod sprzętem widać też liczbę i typ rdzeni CPU oraz liczbę rdzeni GPU, a dla nowych pomiarów:
-
-- **Okno gry** — rozmiar okna gry w pikselach i czy zajmowało cały ekran (z listy okien systemu, bez dodatkowych uprawnień). To rozdzielczość wyjściowa; gra może renderować w niższej i skalować obraz. W trybie okienkowym wymiar obejmuje pasek tytułu.
-- **Tryb gry** — czy był włączony przez cały pomiar, przez część, czy wcale; MetalCap śledzi komunikaty `gamepolicyd` w logu systemowym. Gdy nie działał przez cały pomiar, w nagłówku pojawia się uwaga.
-
-Stanu MetalFX i wewnętrznej rozdzielczości renderowania nie da się odczytać: Metal HUD pokazuje je na nakładce, ale nigdzie ich nie zapisuje.
-
-Przycisk „Eksportuj” przy wyniku zapisuje:
-
-- **Pełny wynik (JSON)** — metadane, sprzęt, metryki FPS, wszystkie klatki i serię metryk systemowych; pole `formatVersion` oznacza wersję układu pliku.
-- **Klatki (CSV)** — wiersz na klatkę: numer, czas od startu, czas klatki, czas GPU, FPS.
-- **Metryki systemowe (CSV)** — wiersz na sekundę pomiaru.
-- **Podsumowanie wszystkich wyników (CSV)** — wiersz na wynik: metryki FPS, sprzęt, średnie i maksima systemowe.
-
-Format CSV wybiera się w ustawieniach: standardowy (przecinek, kropka dziesiętna) albo dla polskiego Excela (średnik, przecinek dziesiętny).
-
-## Nakładka HUD
-
-Ustawienia → „Nakładka HUD”: wybór wyświetlanych elementów, pozycja, skala i krycie. Odpowiadają zmiennym `MTL_HUD_ELEMENTS`, `MTL_HUD_ALIGNMENT`, `MTL_HUD_SCALE` i `MTL_HUD_OPACITY` i działają dla gier uruchomionych po zmianie.
-
-## Skąd biorą się dane
-
-Metal HUD z `MTL_HUD_LOG_ENABLED=1` wypisuje raz na sekundę linię `metal-HUD: …` z czasami wszystkich klatek. Trafia ona w dwa miejsca:
-
-- **stderr gry** — pełne dane,
-- **log systemowy** — na macOS 27 czasy klatek są zastąpione przez `<private>`.
-
-Stąd dwa tryby pracy:
-
-### Uruchom grę przez MetalCap (działa od razu)
-
-„Uruchom grę…” w oknie lub menu: wybierasz aplikację, MetalCap startuje ją z włączonym HUD i czyta jej stderr. Działa dla gier, które da się uruchomić bezpośrednio z pliku `.app`.
-
-### Metal HUD globalnie (wymaga odblokowania logu)
-
-Przełącznik „Metal HUD” ustawia `MTL_HUD_ENABLED=1` i `MTL_HUD_LOG_ENABLED=1` przez `launchctl setenv` dla wszystkich aplikacji uruchomionych od tej chwili (Steam i CrossOver trzeba zrestartować). MetalCap widzi wtedy grę w logu systemowym, ale czasy klatek są ukryte, dopóki log nie zostanie odblokowany.
-
-Przy starcie MetalCap sprawdza, czy log jest odblokowany, i jeśli nie — pokazuje instrukcję. Odblokowanie to profil konfiguracyjny z ładunkiem `com.apple.system.logging`, który włącza `Enable-Private-Data` wyłącznie dla podsystemu `com.apple.metal.hud`:
-
-1. „Zainstaluj profil…” (w monicie albo w ustawieniach) zapisuje `MetalCap-FrameTimes.mobileconfig` w Pobranych, przekazuje go systemowi i otwiera Ustawienia systemowe.
-2. W Ustawieniach systemowych: Ogólne → Zarządzanie urządzeniem → dwuklik na „MetalCap – czasy klatek” → Zainstaluj. Profil jest niepodpisany, macOS zapyta o hasło.
-3. Uruchom ponownie grę; zmiana może zacząć działać po minucie lub dwóch.
-
-Profil usuwa się w tym samym miejscu Ustawień systemowych. Bezpośredni zapis pliku w `/Library/Preferences/Logging/Subsystems/` nie wchodzi w grę: macOS 27 odrzuca go nawet z uprawnieniami administratora.
-
-## Język
-
-Interfejs jest po polsku i po angielsku. Domyślnie język jest wybierany automatycznie: polski na systemie ustawionym na polski, angielski na każdym innym. W ustawieniach można wymusić jeden z nich; menu systemowe przełączą się po ponownym uruchomieniu aplikacji.
-
-## Metryki
-
-Liczone jak w `FrametimeStatisticProvider.cs` z CapFrameX:
-
-- **AVG** — liczba klatek × 1000 / suma czasów klatek.
-- **P1, P0.2, P5, mediana…** — kwantyl R-8 (jak `MathNet.Numerics`) z wartości FPS.
-- **1% Low (Average)** — 1000 / średnia czasów klatek nie krótszych niż kwantyl 0.99.
-- **1% Low (Integral)** — najwolniejsze klatki sumowane do 1% czasu pomiaru; wynik to FPS klatki, na której próg został osiągnięty (definicja MSI Afterburner).
-
-## Tryb bez okna
+## Building
 
 ```sh
-build/MetalCap.app/Contents/MacOS/MetalCap --run /ścieżka/do/Gry.app --seconds 30
+swift test             # unit tests
+Scripts/e2e.sh         # end-to-end tests, need an unlocked Mac with the display on
+Scripts/make-app.sh    # builds build/MetalCap.app
 ```
 
-Uruchamia grę, mierzy przez podany czas i wypisuje metryki.
+## License
 
-Przechwycenia leżą w `~/Library/Application Support/MetalCap/Captures/` jako pliki JSON.
+MIT - see [LICENSE](LICENSE).
