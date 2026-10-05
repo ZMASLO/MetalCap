@@ -1,33 +1,73 @@
 import Foundation
 import IOKit
 
-// IOReport is a private framework; these are the entry points power tools such as mactop use.
-@_silgen_name("IOReportCopyChannelsInGroup")
-private func IOReportCopyChannelsInGroup(_ group: CFString?, _ subgroup: CFString?, _ a: UInt64, _ b: UInt64, _ c: UInt64) -> Unmanaged<CFDictionary>?
-@_silgen_name("IOReportMergeChannels")
-private func IOReportMergeChannels(_ into: CFMutableDictionary, _ other: CFDictionary, _ unused: CFTypeRef?)
-@_silgen_name("IOReportCreateSubscription")
-private func IOReportCreateSubscription(_ a: UnsafeRawPointer?, _ channels: CFMutableDictionary, _ subscribed: UnsafeMutablePointer<Unmanaged<CFMutableDictionary>?>, _ id: UInt64, _ b: CFTypeRef?) -> Unmanaged<AnyObject>?
-@_silgen_name("IOReportCreateSamples")
-private func IOReportCreateSamples(_ subscription: AnyObject, _ channels: CFMutableDictionary?, _ unused: CFTypeRef?) -> Unmanaged<CFDictionary>?
-@_silgen_name("IOReportCreateSamplesDelta")
-private func IOReportCreateSamplesDelta(_ previous: CFDictionary, _ current: CFDictionary, _ unused: CFTypeRef?) -> Unmanaged<CFDictionary>?
-@_silgen_name("IOReportChannelGetGroup")
-private func IOReportChannelGetGroup(_ channel: CFDictionary) -> Unmanaged<CFString>?
-@_silgen_name("IOReportChannelGetSubGroup")
-private func IOReportChannelGetSubGroup(_ channel: CFDictionary) -> Unmanaged<CFString>?
-@_silgen_name("IOReportChannelGetChannelName")
-private func IOReportChannelGetChannelName(_ channel: CFDictionary) -> Unmanaged<CFString>?
-@_silgen_name("IOReportChannelGetUnitLabel")
-private func IOReportChannelGetUnitLabel(_ channel: CFDictionary) -> Unmanaged<CFString>?
-@_silgen_name("IOReportSimpleGetIntegerValue")
-private func IOReportSimpleGetIntegerValue(_ channel: CFDictionary, _ index: Int32) -> Int64
-@_silgen_name("IOReportStateGetCount")
-private func IOReportStateGetCount(_ channel: CFDictionary) -> Int32
-@_silgen_name("IOReportStateGetNameForIndex")
-private func IOReportStateGetNameForIndex(_ channel: CFDictionary, _ index: Int32) -> Unmanaged<CFString>?
-@_silgen_name("IOReportStateGetResidency")
-private func IOReportStateGetResidency(_ channel: CFDictionary, _ index: Int32) -> Int64
+/// The IOReport functions MetalCap uses. IOReport is a private library (power tools such as mactop
+/// use the same entry points), so it is opened at run time instead of linked: if a future macOS drops
+/// it or any of these functions, MetalCap still starts and simply has no CPU/GPU power or clocks.
+struct IOReportFunctions {
+    typealias CopyChannels = @convention(c) (CFString?, CFString?, UInt64, UInt64, UInt64) -> Unmanaged<CFDictionary>?
+    typealias MergeChannels = @convention(c) (CFMutableDictionary, CFDictionary, CFTypeRef?) -> Void
+    typealias CreateSubscription = @convention(c) (UnsafeRawPointer?, CFMutableDictionary,
+                                                  UnsafeMutablePointer<Unmanaged<CFMutableDictionary>?>, UInt64,
+                                                  CFTypeRef?) -> Unmanaged<CFTypeRef>?
+    typealias CreateSamples = @convention(c) (CFTypeRef, CFMutableDictionary?, CFTypeRef?) -> Unmanaged<CFDictionary>?
+    typealias CreateSamplesDelta = @convention(c) (CFDictionary, CFDictionary, CFTypeRef?) -> Unmanaged<CFDictionary>?
+    typealias ChannelString = @convention(c) (CFDictionary) -> Unmanaged<CFString>?
+    typealias ChannelInteger = @convention(c) (CFDictionary, Int32) -> Int64
+    typealias StateCount = @convention(c) (CFDictionary) -> Int32
+    typealias StateName = @convention(c) (CFDictionary, Int32) -> Unmanaged<CFString>?
+
+    let copyChannelsInGroup: CopyChannels
+    let mergeChannels: MergeChannels
+    let createSubscription: CreateSubscription
+    let createSamples: CreateSamples
+    let createSamplesDelta: CreateSamplesDelta
+    let channelGetGroup: ChannelString
+    let channelGetSubGroup: ChannelString
+    let channelGetChannelName: ChannelString
+    let channelGetUnitLabel: ChannelString
+    let simpleGetIntegerValue: ChannelInteger
+    let stateGetCount: StateCount
+    let stateGetNameForIndex: StateName
+    let stateGetResidency: ChannelInteger
+
+    static let shared = IOReportFunctions(libraryPath: "/usr/lib/libIOReport.dylib")
+
+    /// Nil when the library or any of the functions is missing.
+    init?(libraryPath: String) {
+        guard let library = dlopen(libraryPath, RTLD_NOW | RTLD_LOCAL) else { return nil }
+        func function<T>(_ name: String, _: T.Type) -> T? {
+            dlsym(library, name).map { unsafeBitCast($0, to: T.self) }
+        }
+        guard let copyChannelsInGroup = function("IOReportCopyChannelsInGroup", CopyChannels.self),
+              let mergeChannels = function("IOReportMergeChannels", MergeChannels.self),
+              let createSubscription = function("IOReportCreateSubscription", CreateSubscription.self),
+              let createSamples = function("IOReportCreateSamples", CreateSamples.self),
+              let createSamplesDelta = function("IOReportCreateSamplesDelta", CreateSamplesDelta.self),
+              let channelGetGroup = function("IOReportChannelGetGroup", ChannelString.self),
+              let channelGetSubGroup = function("IOReportChannelGetSubGroup", ChannelString.self),
+              let channelGetChannelName = function("IOReportChannelGetChannelName", ChannelString.self),
+              let channelGetUnitLabel = function("IOReportChannelGetUnitLabel", ChannelString.self),
+              let simpleGetIntegerValue = function("IOReportSimpleGetIntegerValue", ChannelInteger.self),
+              let stateGetCount = function("IOReportStateGetCount", StateCount.self),
+              let stateGetNameForIndex = function("IOReportStateGetNameForIndex", StateName.self),
+              let stateGetResidency = function("IOReportStateGetResidency", ChannelInteger.self)
+        else { return nil }
+        self.copyChannelsInGroup = copyChannelsInGroup
+        self.mergeChannels = mergeChannels
+        self.createSubscription = createSubscription
+        self.createSamples = createSamples
+        self.createSamplesDelta = createSamplesDelta
+        self.channelGetGroup = channelGetGroup
+        self.channelGetSubGroup = channelGetSubGroup
+        self.channelGetChannelName = channelGetChannelName
+        self.channelGetUnitLabel = channelGetUnitLabel
+        self.simpleGetIntegerValue = simpleGetIntegerValue
+        self.stateGetCount = stateGetCount
+        self.stateGetNameForIndex = stateGetNameForIndex
+        self.stateGetResidency = stateGetResidency
+    }
+}
 
 /// Pure helpers for interpreting IOReport power channels, following mactop's approach.
 enum PowerChannels {
@@ -118,7 +158,8 @@ final class PowerReader {
     private var efficiencyTable: [Double] = []
     private var gpuTable: [Double] = []
 
-    private let subscription: AnyObject
+    private let api: IOReportFunctions
+    private let subscription: CFTypeRef
     private let channels: CFMutableDictionary
     private var previous: (sample: CFDictionary, date: Date)?
     /// Once the CPU energy counter has read zero while the histograms showed power,
@@ -126,30 +167,32 @@ final class PowerReader {
     private var cpuCounterGated = false
 
     init?() {
-        guard let energy = IOReportCopyChannelsInGroup("Energy Model" as CFString, nil, 0, 0, 0)?.takeRetainedValue(),
+        guard let api = IOReportFunctions.shared else { return nil }
+        self.api = api
+        guard let energy = api.copyChannelsInGroup("Energy Model" as CFString, nil, 0, 0, 0)?.takeRetainedValue(),
               let merged = CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, energy) else { return nil }
         // Some chips keep the histograms in "PMP", others in per-die groups "PMP0", "PMP1", ...
         for group in ["PMP"] + (0..<8).map({ "PMP\($0)" }) {
-            guard let found = IOReportCopyChannelsInGroup(group as CFString, nil, 0, 0, 0)?.takeRetainedValue(),
+            guard let found = api.copyChannelsInGroup(group as CFString, nil, 0, 0, 0)?.takeRetainedValue(),
                   let all = (found as NSDictionary)["IOReportChannels"] as? [NSDictionary] else { continue }
             // The PMP groups hold hundreds of channels; subscribe only to the ones that are read.
             let wanted = all.filter { channel in
                 PowerChannels.isCPUPowerHistogram(
-                    subgroup: IOReportChannelGetSubGroup(channel)?.takeUnretainedValue() as String? ?? "",
-                    name: IOReportChannelGetChannelName(channel)?.takeUnretainedValue() as String? ?? "")
+                    subgroup: api.channelGetSubGroup(channel)?.takeUnretainedValue() as String? ?? "",
+                    name: api.channelGetChannelName(channel)?.takeUnretainedValue() as String? ?? "")
             }
             guard !wanted.isEmpty, let filtered = (found as NSDictionary).mutableCopy() as? NSMutableDictionary else { continue }
             filtered["IOReportChannels"] = wanted
-            IOReportMergeChannels(merged, filtered, nil)
+            api.mergeChannels(merged, filtered, nil)
         }
         // Performance-state residencies of the CPU clusters and the GPU.
         for (group, subgroup) in [("CPU Stats", "CPU Complex Performance States"), ("GPU Stats", "GPU Performance States")] {
-            if let found = IOReportCopyChannelsInGroup(group as CFString, subgroup as CFString, 0, 0, 0)?.takeRetainedValue() {
-                IOReportMergeChannels(merged, found, nil)
+            if let found = api.copyChannelsInGroup(group as CFString, subgroup as CFString, 0, 0, 0)?.takeRetainedValue() {
+                api.mergeChannels(merged, found, nil)
             }
         }
         var subscribed: Unmanaged<CFMutableDictionary>?
-        guard let subscription = IOReportCreateSubscription(nil, merged, &subscribed, 0, nil)?.takeRetainedValue()
+        guard let subscription = api.createSubscription(nil, merged, &subscribed, 0, nil)?.takeRetainedValue()
         else { return nil }
         self.subscription = subscription
         channels = merged
@@ -185,10 +228,10 @@ final class PowerReader {
 
     /// Averages since the previous call; nil on the first call.
     func read(at date: Date) -> PowerReading? {
-        guard let sample = IOReportCreateSamples(subscription, channels, nil)?.takeRetainedValue() else { return nil }
+        guard let sample = api.createSamples(subscription, channels, nil)?.takeRetainedValue() else { return nil }
         defer { previous = (sample, date) }
         guard let previous, date > previous.date,
-              let delta = IOReportCreateSamplesDelta(previous.sample, sample, nil)?.takeRetainedValue(),
+              let delta = api.createSamplesDelta(previous.sample, sample, nil)?.takeRetainedValue(),
               let items = (delta as NSDictionary)["IOReportChannels"] as? [NSDictionary] else { return nil }
         let seconds = date.timeIntervalSince(previous.date)
 
@@ -197,11 +240,11 @@ final class PowerReader {
         var reading = PowerReading()
         var secondClusters: [(active: Double, frequency: Double?)] = []
         for item in items {
-            let group = IOReportChannelGetGroup(item)?.takeUnretainedValue() as String? ?? ""
-            let name = IOReportChannelGetChannelName(item)?.takeUnretainedValue() as String? ?? ""
+            let group = api.channelGetGroup(item)?.takeUnretainedValue() as String? ?? ""
+            let name = api.channelGetChannelName(item)?.takeUnretainedValue() as String? ?? ""
             if group == "Energy Model" {
-                let unit = IOReportChannelGetUnitLabel(item)?.takeUnretainedValue() as String? ?? ""
-                guard let joules = PowerChannels.joules(IOReportSimpleGetIntegerValue(item, 0), unit: unit),
+                let unit = api.channelGetUnitLabel(item)?.takeUnretainedValue() as String? ?? ""
+                guard let joules = PowerChannels.joules(api.simpleGetIntegerValue(item, 0), unit: unit),
                       joules >= 0 else { continue }
                 let watts = joules / seconds
                 if name.contains("ECPU Energy") || name.contains("PCPU Energy") || name.contains("MCPU Energy") {
@@ -214,11 +257,11 @@ final class PowerReader {
                     gpuAlias += watts
                 }
             } else if group == "CPU Stats" || group == "GPU Stats" {
-                let count = IOReportStateGetCount(item)
+                let count = api.stateGetCount(item)
                 guard count > 1 else { continue }
                 let states = (0..<count).map {
-                    (name: IOReportStateGetNameForIndex(item, $0)?.takeUnretainedValue() as String? ?? "",
-                     residency: IOReportStateGetResidency(item, $0))
+                    (name: api.stateGetNameForIndex(item, $0)?.takeUnretainedValue() as String? ?? "",
+                     residency: api.stateGetResidency(item, $0))
                 }
                 if group == "GPU Stats" {
                     if name == "GPUPH" { reading.gpuFrequency = PowerChannels.activity(states: states, table: gpuTable)?.frequency }
@@ -237,13 +280,13 @@ final class PowerReader {
                     }
                 }
             } else if group.hasPrefix("PMP") {
-                let subgroup = IOReportChannelGetSubGroup(item)?.takeUnretainedValue() as String? ?? ""
-                let count = IOReportStateGetCount(item)
+                let subgroup = api.channelGetSubGroup(item)?.takeUnretainedValue() as String? ?? ""
+                let count = api.stateGetCount(item)
                 guard count > 1, PowerChannels.isCPUPowerHistogram(subgroup: subgroup, name: name) else { continue }
                 let states = 0..<count
                 let watts = PowerChannels.weightedAverage(
-                    bins: states.map { PowerChannels.binValue(IOReportStateGetNameForIndex(item, $0)?.takeUnretainedValue() as String? ?? "") },
-                    residency: states.map { IOReportStateGetResidency(item, $0) })
+                    bins: states.map { PowerChannels.binValue(api.stateGetNameForIndex(item, $0)?.takeUnretainedValue() as String? ?? "") },
+                    residency: states.map { api.stateGetResidency(item, $0) })
                 // A channel merged into the subscription twice must count once.
                 let key = group + "/" + name
                 histograms[key] = max(histograms[key] ?? 0, watts)

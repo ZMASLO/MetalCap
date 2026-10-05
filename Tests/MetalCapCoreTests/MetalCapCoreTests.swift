@@ -705,3 +705,15 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
                           "rdzenie", "rdzeni", "rdzenie", "rdzeni"])
     }
 }
+
+@Suite struct IOReportLoadingTests {
+    @Test func findsEveryFunctionOnThisMac() {
+        #expect(IOReportFunctions.shared != nil)
+    }
+
+    @Test func missingLibraryMeansNoPowerReadingsInsteadOfACrash() {
+        #expect(IOReportFunctions(libraryPath: "/usr/lib/libDoesNotExist.dylib") == nil)
+        // A library that exists but lacks the functions.
+        #expect(IOReportFunctions(libraryPath: "/usr/lib/libz.dylib") == nil)
+    }
+}

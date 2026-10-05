@@ -13,8 +13,7 @@ let package = Package(
     name: "MetalCap",
     platforms: [.macOS(.v14)],
     targets: [
-        // IOReport is a private system library, used for CPU and GPU power.
-        .target(name: "MetalCapCore", linkerSettings: [.linkedLibrary("IOReport")]),
+        .target(name: "MetalCapCore"),
         .executableTarget(name: "MetalCap", dependencies: ["MetalCapCore"]),
         // A minimal Metal app the end-to-end tests measure.
         .executableTarget(name: "MetalCapProbe"),
