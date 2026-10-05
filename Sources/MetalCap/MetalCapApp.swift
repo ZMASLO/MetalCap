@@ -13,17 +13,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let sheet = arguments.firstIndex(of: "--show").flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
             // `--show system` renders just the System section, which sits below the fold in the window.
             if sheet == "system" {
-                guard let capture = AppModel.shared.captures.first(where: { $0.system != nil }),
-                      capture.system != nil, let metrics = capture.metrics else { exit(1) }
-                let pointer = arguments.firstIndex(of: "--pointer").flatMap { $0 + 1 < arguments.count ? Double(arguments[$0 + 1]) : nil }
-                let renderer = ImageRenderer(content: SystemSectionView(capture: capture, averageFPS: metrics.average,
-                                                                        hoverTime: .constant(pointer))
-                .padding(20).frame(width: 900).background(Color(nsColor: .windowBackgroundColor)))
-                renderer.scale = 2
-                guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
-                      let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { exit(1) }
-                try? png.write(to: URL(fileURLWithPath: arguments[index + 1]))
-                exit(0)
+                // Captures load in the background; give them a moment.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    guard let capture = AppModel.shared.captures.first(where: { $0.system != nil }),
+                          capture.system != nil, let metrics = capture.metrics else { exit(1) }
+                    let pointer = arguments.firstIndex(of: "--pointer").flatMap { $0 + 1 < arguments.count ? Double(arguments[$0 + 1]) : nil }
+                    let renderer = ImageRenderer(content: SystemSectionView(capture: capture, averageFPS: metrics.average,
+                                                                            hoverTime: .constant(pointer))
+                    .padding(20).frame(width: 900).background(Color(nsColor: .windowBackgroundColor)))
+                    renderer.scale = 2
+                    guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                          let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { exit(1) }
+                    try? png.write(to: URL(fileURLWithPath: arguments[index + 1]))
+                    exit(0)
+                }
+                return
             }
             AppModel.shared.showingUnlockPrompt = sheet == "unlock"
             AppModel.shared.showingSettings = sheet == "settings" || sheet == "overlay"
