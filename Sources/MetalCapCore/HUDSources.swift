@@ -78,7 +78,8 @@ public final class LaunchedProcessSource {
             guard let self else { return }
             for line in buffer.append(handle.availableData) {
                 guard let sample = HUDLogParser.parse(line) else { continue }
-                self.onEvent?(HUDEvent(time: now, pid: self.pid, processName: self.processName, sample: sample))
+                let time = HUDLogParser.timestamp(ofStderrLine: line) ?? now
+                self.onEvent?(HUDEvent(time: time, pid: self.pid, processName: self.processName, sample: sample))
             }
         }
         process.terminationHandler = { [weak self] _ in

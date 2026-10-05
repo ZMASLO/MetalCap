@@ -47,6 +47,22 @@ public enum HUDLogParser {
         }
         return HUDSample(frameNumber: frameNumber, frames: frames, isRedacted: isRedacted)
     }
+
+    private static let stderrTimestamp: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        return formatter
+    }()
+
+    /// When the line was written, from the header the HUD puts on lines it prints to stderr
+    /// ("2026-10-05 12:37:25.226 Game[123:456] metal-HUD: ..."). Lines can be read late and
+    /// several at once, so the time of reading would misplace frames at the edges of a capture.
+    public static func timestamp(ofStderrLine line: String) -> Date? {
+        guard line.count >= 23 else { return nil }
+        return stderrTimestamp.date(from: String(line.prefix(23)))
+    }
 }
 
 /// A parsed HUD line together with where and when it came from.

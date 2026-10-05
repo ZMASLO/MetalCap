@@ -93,6 +93,20 @@ final class AppModel: ObservableObject {
     /// The frontmost app's window when the current capture started, usually the game's.
     private var startWindow: (pid: Int32, window: GameWindow?)?
     private var samplingTimer: Timer?
+    /// Keeps App Nap from throttling MetalCap while it records or reads a game it launched:
+    /// it runs in the background then, and a throttled reader delays samples and HUD lines.
+    private var activity: NSObjectProtocol?
+
+    private func updateActivity() {
+        let needed = isRecording || isFinishing || !launched.isEmpty
+        if needed, activity == nil {
+            activity = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiated, .latencyCritical], reason: "Measuring a game")
+        } else if !needed, let activity {
+            ProcessInfo.processInfo.endActivity(activity)
+            self.activity = nil
+        }
+    }
     /// Power conditions when the current capture started.
     private var startedOnBattery: Bool?
     private var startedInLowPowerMode = false
@@ -234,9 +248,13 @@ final class AppModel: ObservableObject {
         }
         let pid = source.pid
         source.onExit = { [weak self] in
-            Task { @MainActor in self?.launched[pid] = nil }
+            Task { @MainActor in
+                self?.launched[pid] = nil
+                self?.updateActivity()
+            }
         }
         launched[pid] = source
+        updateActivity()
     }
 
     // MARK: Capture
@@ -287,6 +305,7 @@ final class AppModel: ObservableObject {
             samplingTimer = timer
             Sounds.start()
             isRecording = true
+            updateActivity()
             message = nil
         }
     }
@@ -295,6 +314,7 @@ final class AppModel: ObservableObject {
         isFinishing = false
         samplingTimer?.invalidate()
         samplingTimer = nil
+        updateActivity()
         guard var capture = recorder.finish() else {
             Sounds.failure()
             message = frameDataRedacted

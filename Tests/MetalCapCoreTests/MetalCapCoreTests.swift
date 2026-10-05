@@ -68,6 +68,15 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         ])
     }
 
+    @Test func readsTheTimeAStderrLineWasWritten() throws {
+        let line = "2026-10-05 12:37:25.226 Game[123:456] metal-HUD: 60,1.0,2.0,16.67,0.5"
+        let time = try #require(HUDLogParser.timestamp(ofStderrLine: line))
+        let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second, .nanosecond], from: time)
+        #expect([parts.year, parts.month, parts.day, parts.hour, parts.minute, parts.second] == [2026, 10, 5, 12, 37, 25])
+        #expect(abs(Double(parts.nanosecond ?? 0) / 1e9 - 0.226) < 0.001)
+        #expect(HUDLogParser.timestamp(ofStderrLine: "metal-HUD: 60,1.0,2.0") == nil)
+    }
+
     @Test func detectsRedactedLine() {
         let sample = HUDLogParser.parse("metal-HUD: 60,6.80,188.61<private>")
         #expect(sample?.frameNumber == 60)

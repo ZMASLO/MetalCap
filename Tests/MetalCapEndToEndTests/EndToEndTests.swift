@@ -44,6 +44,10 @@ private final class Pipeline: @unchecked Sendable {
             guard Date() < deadline else { return nil }
             try await Task.sleep(for: .milliseconds(100))
         }
+        // As the app does while recording: no App Nap for a process working in the background.
+        let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical],
+                                                             reason: "End-to-end capture")
+        defer { ProcessInfo.processInfo.endActivity(activity) }
         queue.sync { recorder.start(at: Date(), preferredPID: targetPID) }
         let sampling = Task {
             while !Task.isCancelled {
@@ -68,7 +72,7 @@ private func requireAwakeDisplay() throws {
 }
 
 /// Checks a capture of the probe from frame metrics through storage and export.
-private func verify(_ capture: Capture) throws {
+private func verify(_ capture: Capture, seconds captureSeconds: Double = captureSeconds) throws {
     let metrics = try #require(capture.metrics)
     #expect(abs(metrics.average - targetFPS) < 2, "AVG \(metrics.average)")
     #expect(abs(metrics.median - targetFPS) < 1, "median \(metrics.median)")
@@ -182,5 +186,123 @@ struct MetalCapEndToEndTests {
         // The headless run includes the start-up frames, so allow a little more slack.
         #expect(abs((average ?? 0) - targetFPS) < 4, "\(text)")
         #expect(text.contains("System ("), "no system summary in: \(text)")
+    }
+}
+
+/// PIDs of the direct children of `pid`.
+private func children(of pid: Int32) -> [Int32] {
+    let pgrep = Process()
+    pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+    pgrep.arguments = ["-P", String(pid)]
+    let output = Pipe()
+    pgrep.standardOutput = output
+    try? pgrep.run()
+    let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    pgrep.waitUntilExit()
+    return text.split(separator: "\n").compactMap { Int32($0) }
+}
+
+private func isRunning(_ pid: Int32) -> Bool {
+    kill(pid, 0) == 0
+}
+
+/// Waits until `condition` holds or `timeout` passes; returns whether it held.
+private func eventually(within timeout: Double, _ condition: () -> Bool) async throws -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() { return true }
+        try await Task.sleep(for: .milliseconds(200))
+    }
+    return condition()
+}
+
+@Suite(.serialized, .enabled(if: Environment.isEnabled, "Run Scripts/e2e.sh"))
+struct MetalCapLogStreamTests {
+    /// A crash or `kill -9` of MetalCap must not leave `log stream` running.
+    @Test(.timeLimit(.minutes(1)), .enabled(if: Environment.cli != nil))
+    func killedAppLeavesNoLogStreamBehind() async throws {
+        let app = Process()
+        app.executableURL = URL(fileURLWithPath: try #require(Environment.cli))
+        app.arguments = ["--sample", "60"]
+        app.standardOutput = FileHandle.nullDevice
+        app.standardError = FileHandle.nullDevice
+        try app.run()
+        defer { if app.isRunning { app.terminate() } }
+
+        // The app starts one watchdog shell per stream, each with a `log stream` under it.
+        var descendants: [Int32] = []
+        _ = try await eventually(within: 5) {
+            let shells = children(of: app.processIdentifier)
+            descendants = shells + shells.flatMap(children(of:))
+            return !shells.isEmpty && descendants.count > shells.count
+        }
+        try #require(!descendants.isEmpty, "the app started no log stream")
+
+        kill(app.processIdentifier, SIGKILL)
+        let cleanedUp = try await eventually(within: 6) { !descendants.contains(where: isRunning) }
+        #expect(cleanedUp, "still running: \(descendants.filter(isRunning))")
+    }
+
+    /// If `log stream` ends on its own, reading resumes and the game is measured again.
+    @Test(.timeLimit(.minutes(1)), .enabled(if: LogPrivacy.isUnlocked(), "Install the logging profile first"))
+    func readingResumesAfterTheLogStreamEnds() async throws {
+        try requireAwakeDisplay()
+        let lock = NSLock()
+        var lines: [Date] = []
+        let source = LogStreamSource()
+        let game = Process()
+        source.onEvent = { event in
+            guard event.pid == game.processIdentifier, !event.sample.frames.isEmpty else { return }
+            lock.lock(); lines.append(Date()); lock.unlock()
+        }
+        try source.start()
+        defer { source.stop() }
+        try await Task.sleep(for: .seconds(1))
+
+        game.executableURL = URL(fileURLWithPath: try #require(Environment.probe))
+        game.arguments = ["30", String(Int(targetFPS))]
+        game.environment = ProcessInfo.processInfo.environment.merging(
+            Dictionary(uniqueKeysWithValues: HUDEnvironment.variables.map { ($0, "1") })) { $1 }
+        game.standardError = FileHandle.nullDevice
+        try game.run()
+        defer { game.terminate() }
+
+        func count() -> Int { lock.lock(); defer { lock.unlock() }; return lines.count }
+        #expect(try await eventually(within: 10) { count() >= 2 }, "no lines before the stream was killed")
+
+        let shell = try #require(source.stream.processIdentifier)
+        let logStream = try #require(children(of: shell).first, "no log stream under the watchdog")
+        kill(logStream, SIGKILL)
+        let killedAt = Date()
+
+        // The first restart comes after one second; then lines flow again.
+        let resumed = try await eventually(within: 10) {
+            lock.lock(); defer { lock.unlock() }
+            return lines.filter { $0 > killedAt.addingTimeInterval(1) }.count >= 2
+        }
+        #expect(resumed, "no lines after the log stream was restarted")
+        #expect(source.stream.processIdentifier != nil)
+    }
+}
+
+@Suite(.serialized, .enabled(if: Environment.isEnabled, "Run Scripts/e2e.sh"))
+struct MetalCapLongCaptureTests {
+    /// A minute-long capture: nothing drifts or goes missing over time.
+    @Test(.timeLimit(.minutes(2)))
+    func minuteLongCaptureIsComplete() async throws {
+        try requireAwakeDisplay()
+        let seconds = 60.0
+        let source = LaunchedProcessSource(url: URL(fileURLWithPath: try #require(Environment.probe)),
+                                           arguments: [String(Int(seconds) + 15), String(Int(targetFPS))])
+        let pipeline = Pipeline()
+        source.onEvent = pipeline.ingest
+        try source.start()
+        defer { source.terminate() }
+        pipeline.targetPID = source.pid
+
+        let capture = try #require(try await pipeline.capture(seconds: seconds), "no frames from the probe")
+        print("long capture: frames \(capture.frameTimes.count), wall \(capture.wallDuration ?? 0), coverage \(capture.coverage ?? 0), missing \(capture.missingFrames ?? 0), samples \(capture.system?.count ?? 0)")
+        try verify(capture, seconds: seconds)
+        #expect((capture.missingFrames ?? 0) == 0)
     }
 }
