@@ -6,4 +6,6 @@ cd "$(dirname "$0")/.."
 
 swift build
 BIN="$(swift build --show-bin-path)"
-METALCAP_PROBE="$BIN/MetalCapProbe" METALCAP_CLI="$BIN/MetalCap" swift test --filter MetalCapEndToEndTests
+# One test at a time: probe windows from parallel tests would cover each other,
+# and macOS stops drawing a window that is fully covered.
+METALCAP_PROBE="$BIN/MetalCapProbe" METALCAP_CLI="$BIN/MetalCap" swift test --no-parallel --filter MetalCapEndToEndTests

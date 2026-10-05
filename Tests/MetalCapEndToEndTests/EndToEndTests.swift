@@ -49,10 +49,16 @@ private final class Pipeline: @unchecked Sendable {
                                                              reason: "End-to-end capture")
         defer { ProcessInfo.processInfo.endActivity(activity) }
         queue.sync { recorder.start(at: Date(), preferredPID: targetPID) }
+        // Once per second on a fixed schedule, like the app's timer: reading takes a little time,
+        // and sleeping a full second after each read would slowly fall behind.
         let sampling = Task {
+            let start = Date()
+            var tick = 0.0
             while !Task.isCancelled {
                 queue.sync { recorder.ingest(sampler.read(pids: recorder.candidatePIDs)) }
-                try? await Task.sleep(for: .seconds(1))
+                tick += 1
+                let next = start.addingTimeInterval(tick).timeIntervalSinceNow
+                if next > 0 { try? await Task.sleep(for: .seconds(next)) }
             }
         }
         try await Task.sleep(for: .seconds(seconds))
