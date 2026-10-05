@@ -42,6 +42,14 @@ Download `MetalCap-<version>.zip` from Releases and move `MetalCap.app` to Appli
 - 1% Low - either the mean of the slowest 1% of frames (Average) or the frame at which the slowest frames add up to 1% of the time (Integral, as in MSI Afterburner); chosen in settings.
 - CPU power is an estimate from per-cluster power histograms, because macOS does not expose the CPU energy counter.
 
+## Security and limitations
+
+- The logging profile reveals only Metal HUD messages (frame numbers and frame times). It applies to the whole system and stays after MetalCap is deleted; remove it in System Settings - General - Device Management.
+- Metal HUD turned on in MetalCap applies to every Metal app launched afterwards, also after MetalCap is closed, until you turn the switch off or log out.
+- Hiding the overlay with Shift-F9 makes macOS report wrong frame times. Keep it visible while measuring.
+- The app runs without a sandbox, because it reads hardware sensors and the system log, and it is not notarized.
+- Power, clocks, temperatures and the HUD log format come from undocumented Apple sources and may stop working after a macOS update. If a source disappears, MetalCap keeps running without that data.
+
 ## Building
 
 ```sh

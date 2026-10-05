@@ -42,6 +42,14 @@ Pobierz `MetalCap-<wersja>.zip` z Releases i przenieś `MetalCap.app` do Aplikac
 - 1% Low - średnia z najwolniejszego 1% klatek (Average) albo klatka, na której najwolniejsze klatki sumują się do 1% czasu (Integral, jak w MSI Afterburner); wybór w ustawieniach.
 - Moc CPU jest szacowana z histogramów mocy klastrów, bo macOS nie udostępnia licznika energii CPU.
 
+## Bezpieczeństwo i ograniczenia
+
+- Profil logowania odsłania tylko komunikaty Metal HUD (numery i czasy klatek). Działa w całym systemie i zostaje po usunięciu MetalCap; usuwa się go w Ustawieniach systemowych - Ogólne - Zarządzanie urządzeniem.
+- Metal HUD włączony w MetalCap działa dla każdej aplikacji Metal uruchomionej później, także po zamknięciu MetalCap, dopóki nie wyłączysz przełącznika albo się nie wylogujesz.
+- Ukrycie nakładki skrótem Shift-F9 sprawia, że macOS podaje błędne czasy klatek. Podczas pomiaru nakładka musi być widoczna.
+- Aplikacja działa bez sandboxa, bo czyta czujniki sprzętowe i log systemowy, i nie jest notaryzowana.
+- Moc, taktowanie, temperatury i format linii HUD pochodzą z nieudokumentowanych źródeł Apple i mogą przestać działać po aktualizacji macOS. Jeśli któreś źródło zniknie, MetalCap działa dalej bez tych danych.
+
 ## Budowanie
 
 ```sh
