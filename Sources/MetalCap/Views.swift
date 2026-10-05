@@ -136,14 +136,12 @@ struct MainView: View {
 }
 
 struct SettingsView: View {
-    /// "MetalCap 1.0.0 (7)", from the app bundle; a bare development build has no bundle version.
+    /// "MetalCap 1.0.0", from the app bundle; a bare development build has no bundle version.
     static var versionText: String {
-        let info = Bundle.main.infoDictionary
-        guard let version = info?["CFBundleShortVersionString"] as? String else {
+        guard let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String else {
             return tr("MetalCap (wersja deweloperska)", "MetalCap (development build)")
         }
-        let build = (info?["CFBundleVersion"] as? String).map { " (\($0))" } ?? ""
-        return "MetalCap \(version)\(build)"
+        return "MetalCap \(version)"
     }
 
     @EnvironmentObject private var model: AppModel
