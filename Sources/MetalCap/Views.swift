@@ -300,11 +300,20 @@ struct OverlaySettingsView: View {
                     Button(tr("Przywróć domyślne", "Restore defaults")) { model.hudConfiguration = HUDConfiguration() }
                 }
             }
-            Text(tr("Zmiany dotyczą gier uruchomionych po ich wprowadzeniu. Skala to szerokość nakładki względem szerokości obrazu gry.",
-                    "Changes apply to games launched afterwards. Scale is the overlay width relative to the game's image width."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Label {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(tr("Zmiany zaczną działać po ponownym uruchomieniu gry.",
+                            "Changes take effect after the game is restarted."))
+                        .fontWeight(.medium)
+                    Text(tr("Gra odczytuje te ustawienia tylko przy starcie. Jeśli po restarcie gry nic się nie zmieni, uruchom ponownie także Steam lub CrossOver. Skala to szerokość nakładki względem szerokości obrazu gry.",
+                            "The game reads these settings only when it starts. If nothing changes after restarting the game, restart Steam or CrossOver as well. Scale is the overlay width relative to the game's image width."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "arrow.clockwise.circle")
+            }
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
