@@ -964,6 +964,8 @@ struct FrameTimeChart: View {
                     .symbolSize(40)
             }
         }
+        // Span exactly the capture; the automatic axis rounds up and leaves empty space at the end.
+        .chartXScale(domain: 0...max(points.last?.time ?? 1, 1))
         .chartXAxisLabel(tr("Czas (s)", "Time (s)"))
         .chartYAxisLabel("ms")
         .chartOverlay { proxy in
