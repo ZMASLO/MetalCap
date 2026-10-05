@@ -153,7 +153,9 @@ public enum CaptureExporter {
     private static func csv(header: [String], rows: [[Field]], dialect: CSVDialect) -> String {
         func cell(_ field: Field) -> String {
             switch field {
-            case .text(let text):
+            case .text(let raw):
+                // A leading =, +, - or @ would make a spreadsheet read the text as a formula.
+                let text = raw.first.map { "=+-@".contains($0) } == true ? "'" + raw : raw
                 // Quote whatever could be mistaken for structure, doubling embedded quotes.
                 guard text.contains(where: { "\",;\n\r".contains($0) }) else { return text }
                 return "\"" + text.replacingOccurrences(of: "\"", with: "\"\"") + "\""

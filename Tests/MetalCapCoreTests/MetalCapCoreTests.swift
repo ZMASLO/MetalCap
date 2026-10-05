@@ -619,3 +619,80 @@ private func isClose(_ a: Double, _ b: Double, tolerance: Double = 1e-9) -> Bool
         #expect(time < 3, "\(time) s")
     }
 }
+
+@Suite struct RobustnessTests {
+    @Test func parserNeverFailsOnGarbage() {
+        var generator = SystemRandomNumberGenerator()
+        let alphabet = Array("metal-HUD: 0123456789.,<private>-eE\u{0}ąś\n ")
+        for _ in 0..<2_000 {
+            let line = String((0..<Int.random(in: 0...120, using: &generator)).map { _ in alphabet.randomElement(using: &generator)! })
+            if let sample = HUDLogParser.parse(line) {
+                #expect(sample.frames.allSatisfy { $0.interval.isFinite || $0.interval.isNaN || $0.interval.isInfinite })
+            }
+        }
+        // Truncated and malformed lines.
+        #expect(HUDLogParser.parse("metal-HUD: 60,1.0") == nil)
+        #expect(HUDLogParser.parse("metal-HUD: 60,1.0,2.0,16.67")?.frames.isEmpty == true)
+        #expect(HUDLogParser.parse("metal-HUD: 60,1.0,2.0,16.67,0.5,8.3,abc")?.frames.count == 1)
+        #expect(HUDLogParser.parse("metal-HUD: x,1,2,3,4") == nil)
+    }
+
+    @Test func lineBufferKeepsCharactersSplitAcrossChunks() {
+        var buffer = LineBuffer()
+        let bytes = Array("żółć 120°C\nnext\n".utf8)
+        // Cut inside the two-byte "ż" and inside "°".
+        #expect(buffer.append(Data(bytes[0..<1])) == [])
+        #expect(buffer.append(Data(bytes[1..<12])) == [])
+        #expect(buffer.append(Data(bytes[12...])) == ["żółć 120°C", "next"])
+    }
+
+    @Test func recorderKeepsGamesApartAndIgnoresLinesOutsideTheWindow() {
+        let t0 = Date(timeIntervalSinceReferenceDate: 5000)
+        func line(_ pid: Int32, end: Double, number: Int, interval: Double) -> HUDEvent {
+            HUDEvent(time: t0.addingTimeInterval(end), pid: pid, processName: "game\(pid)",
+                     sample: HUDSample(frameNumber: number, frames: Array(repeating: Frame(interval: interval, gpuTime: 1), count: 10),
+                                       isRedacted: false))
+        }
+        let recorder = CaptureRecorder()
+        recorder.ingest(line(1, end: 0.5, number: 10, interval: 50))       // before the start
+        recorder.start(at: t0.addingTimeInterval(1), preferredPID: 2)
+        recorder.ingest(line(1, end: 1.5, number: 20, interval: 50))
+        recorder.ingest(line(2, end: 1.2, number: 10, interval: 20))       // only frames ending after 1 s count
+        recorder.ingest(line(2, end: 1.4, number: 20, interval: 20))
+        recorder.stop(at: t0.addingTimeInterval(1.4))
+        recorder.ingest(line(2, end: 3.0, number: 30, interval: 20))       // entirely after the stop
+        let capture = recorder.finish()
+        #expect(capture?.processName == "game2")
+        #expect(capture?.frameTimes == Array(repeating: 20, count: 20))
+        #expect(recorder.lastCapturePID == 2)
+    }
+
+    @Test func storeSkipsDamagedFiles() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("MetalCapTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = CaptureStore(directory: directory)
+        let good = Capture(processName: "ok", startedAt: Date(timeIntervalSince1970: 100), frameTimes: [10], gpuTimes: [1])
+        try store.save(good)
+        try Data("{ not json".utf8).write(to: directory.appendingPathComponent("broken.json"))
+        try Data("ignored".utf8).write(to: directory.appendingPathComponent("notes.txt"))
+        #expect(store.loadAll().map(\.id) == [good.id])
+    }
+
+    @Test func csvProtectsAgainstFormulasInBothDialects() {
+        var capture = Capture(processName: "=cmd|calc", startedAt: Date(timeIntervalSince1970: 0),
+                              frameTimes: [10], gpuTimes: [1], comment: "-5; DLSS, \"high\"")
+        capture.name = "@SUM(A1)"
+        let standard = CaptureExporter.summaryCSV([capture], dialect: .standard).split(separator: "\n")[1]
+        #expect(standard.hasPrefix(#"'@SUM(A1),'=cmd|calc,"'-5; DLSS, ""high""","#))
+        let semicolon = CaptureExporter.summaryCSV([capture], dialect: .semicolon).split(separator: "\n")[1]
+        #expect(semicolon.hasPrefix(#"'@SUM(A1);'=cmd|calc;"'-5; DLSS, ""high""";"#))
+    }
+
+    @Test func polishNounForms() {
+        let forms = [1, 2, 4, 5, 11, 12, 14, 18, 20, 22, 25, 104, 112].map {
+            PolishGrammar.form(for: $0, one: "rdzeń", few: "rdzenie", many: "rdzeni")
+        }
+        #expect(forms == ["rdzeń", "rdzenie", "rdzenie", "rdzeni", "rdzeni", "rdzeni", "rdzeni", "rdzeni", "rdzeni",
+                          "rdzenie", "rdzeni", "rdzenie", "rdzeni"])
+    }
+}

@@ -677,9 +677,7 @@ struct SystemSectionView: View {
     private func coresLine(_ hardware: HardwareInfo) -> String {
         func cores(_ count: Int) -> String {
             guard L10n.language == .polish else { return "\(count) \(count == 1 ? "core" : "cores")" }
-            let lastDigit = count % 10, lastTwo = count % 100
-            let word = count == 1 ? "rdzeń" : (2...4).contains(lastDigit) && !(12...14).contains(lastTwo) ? "rdzenie" : "rdzeni"
-            return "\(count) \(word)"
+            return "\(count) " + PolishGrammar.form(for: count, one: "rdzeń", few: "rdzenie", many: "rdzeni")
         }
         let cpu = "CPU: \(cores(hardware.cpuCores)) (\(hardware.coreTierDescription))"
         return [cpu, hardware.gpuCores.map { "GPU: \(cores($0))" }].compactMap { $0 }.joined(separator: " · ")

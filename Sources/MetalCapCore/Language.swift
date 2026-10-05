@@ -24,3 +24,12 @@ public enum Language: String, CaseIterable, Sendable {
         return value as? [String] ?? Locale.preferredLanguages
     }
 }
+
+public enum PolishGrammar {
+    /// The noun form Polish uses after `count`: 1 rdzeń, 2-4 rdzenie (but 12-14 rdzeni), otherwise rdzeni.
+    public static func form(for count: Int, one: String, few: String, many: String) -> String {
+        if count == 1 { return one }
+        let lastDigit = count % 10, lastTwo = count % 100
+        return (2...4).contains(lastDigit) && !(12...14).contains(lastTwo) ? few : many
+    }
+}
