@@ -26,5 +26,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The release notes are this version's section of CHANGELOG.md.
+          awk -v version="${GITHUB_REF_NAME#v}" '
+            /^## / { inside = index($0, "## " version " ") == 1; next }
+            inside' CHANGELOG.md > build/notes.md
           gh release create "$GITHUB_REF_NAME" "build/MetalCap-${GITHUB_REF_NAME#v}.zip" \
-            --title "MetalCap ${GITHUB_REF_NAME#v}" --generate-notes
+            --title "MetalCap ${GITHUB_REF_NAME#v}" --notes-file build/notes.md
