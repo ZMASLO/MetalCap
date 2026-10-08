@@ -12,7 +12,7 @@ Frame data comes from the Metal Performance HUD, Apple's official performance to
 
 ## Features
 
-- AVG, P1, 1% Low and 0.1% Low, calculated the same way as in CapFrameX
+- AVG, P1, 1% Low and 0.1% Low (Average or Integral), named and calculated the same way as in CapFrameX
 - Start and stop with a global shortcut, with a sound for each
 - Frame time chart and system metrics: GPU load, CPU and GPU temperature, power, clocks, fan, memory
 - Hardware, game window and Game Mode saved with every result
@@ -39,7 +39,8 @@ Download `MetalCap-<version>.zip` from Releases and move `MetalCap.app` to Appli
 
 - AVG - number of frames divided by the total time.
 - P1, P5, median and other percentiles - R-8 percentiles of the frame rate, as in CapFrameX.
-- 1% Low - either the mean of the slowest 1% of frames (Average) or the frame at which the slowest frames add up to 1% of the time (Integral, as in MSI Afterburner); chosen in settings.
+- 1% Low Average - mean of the slowest 1% of frames.
+- 1% Low Integral - the frame at which the slowest frames add up to 1% of the time (as in MSI Afterburner). Which of the two is shown is set in settings.
 - CPU power is an estimate from per-cluster power histograms, because macOS does not expose the CPU energy counter.
 
 ## Security and limitations

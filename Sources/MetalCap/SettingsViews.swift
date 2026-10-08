@@ -204,6 +204,11 @@ struct OverlaySettingsView: View {
 enum LowVariant: String, CaseIterable {
     case average, integral
 
+    /// The metric's name as CapFrameX writes it: "1% Low Average", "0.1% Low Integral".
+    func metricName(_ share: String) -> String {
+        "\(share) Low " + (self == .average ? "Average" : "Integral")
+    }
+
     var label: String {
         switch self {
         case .average: tr("Average (średnia z najwolniejszych klatek)", "Average (mean of the slowest frames)")

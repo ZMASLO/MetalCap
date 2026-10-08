@@ -12,7 +12,7 @@ Dane o klatkach pochodzą z Metal Performance HUD, oficjalnego narzędzia Apple 
 
 ## Funkcje
 
-- AVG, P1, 1% Low i 0.1% Low liczone tak samo jak w CapFrameX
+- AVG, P1, 1% Low i 0.1% Low (Average albo Integral) nazwane i liczone tak samo jak w CapFrameX
 - Start i stop globalnym skrótem, z dźwiękiem
 - Wykres czasu klatki i metryki systemowe: obciążenie GPU, temperatura CPU i GPU, moc, taktowanie, wentylator, pamięć
 - Sprzęt, okno gry i Tryb gry zapisywane przy każdym wyniku
@@ -39,7 +39,8 @@ Pobierz `MetalCap-<wersja>.zip` z Releases i przenieś `MetalCap.app` do Aplikac
 
 - AVG - liczba klatek podzielona przez łączny czas.
 - P1, P5, mediana i inne percentyle - percentyle R-8 z liczby klatek na sekundę, jak w CapFrameX.
-- 1% Low - średnia z najwolniejszego 1% klatek (Average) albo klatka, na której najwolniejsze klatki sumują się do 1% czasu (Integral, jak w MSI Afterburner); wybór w ustawieniach.
+- 1% Low Average - średnia z najwolniejszego 1% klatek.
+- 1% Low Integral - klatka, na której najwolniejsze klatki sumują się do 1% czasu (jak w MSI Afterburner). Która z nich jest pokazywana, wybiera się w ustawieniach.
 - Moc CPU jest szacowana z histogramów mocy klastrów, bo macOS nie udostępnia licznika energii CPU.
 
 ## Bezpieczeństwo i ograniczenia

@@ -18,7 +18,7 @@ struct CaptureDetailView: View {
                     HStack(spacing: 12) {
                         MetricTile(title: "AVG", value: metrics.average, prominent: true)
                         MetricTile(title: "P1", value: metrics.p1, prominent: true)
-                        MetricTile(title: "1% Low",
+                        MetricTile(title: lowVariant.metricName("1%"),
                                    value: lowVariant == .average ? metrics.onePercentLowAverage : metrics.onePercentLowIntegral,
                                    prominent: true)
                     }
@@ -27,7 +27,7 @@ struct CaptureDetailView: View {
                         MetricTile(title: tr("Mediana", "Median"), value: metrics.median)
                         MetricTile(title: "P5", value: metrics.p5)
                         MetricTile(title: "P0.2", value: metrics.p0_2)
-                        MetricTile(title: "0.1% Low",
+                        MetricTile(title: lowVariant.metricName("0.1%"),
                                    value: lowVariant == .average ? metrics.pointOnePercentLowAverage : metrics.pointOnePercentLowIntegral)
                         MetricTile(title: "Min", value: metrics.min)
                     }
@@ -36,7 +36,7 @@ struct CaptureDetailView: View {
                         MetricBarChart(items: [
                             .init(id: "AVG", value: metrics.average),
                             .init(id: "P1", value: metrics.p1),
-                            .init(id: "1% Low",
+                            .init(id: lowVariant.metricName("1%"),
                                   value: lowVariant == .average ? metrics.onePercentLowAverage : metrics.onePercentLowIntegral),
                         ])
                     }
@@ -136,7 +136,7 @@ struct MetricTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(fps(value))
                     .font(prominent ? .system(size: 34, weight: .semibold) : .title3.weight(.medium))
