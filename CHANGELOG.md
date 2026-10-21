@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1 - 2026-10-21
+
+- Several results can be selected with Shift or Command and deleted together, from the context menu, the Delete key or the selection view; deleting more than one asks first
+- Clicking anywhere outside the comment field ends editing; the field is no longer focused at launch
+- macOS 26 and later: the window uses the Liquid Glass look in every build, with separate toolbar capsules and notices as cards under the toolbar
+- Settings tabs no longer collapse into one truncated button on macOS 26 and later
+
 ## 1.0.0 - 2026-10-08
 
 First release.
