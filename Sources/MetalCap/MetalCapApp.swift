@@ -9,6 +9,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `--snapshot <png> [--size WxH] [--show settings|overlay|unlock|rename|system] [--lang pl|en] [--scroll N] [--pointer seconds]` renders the main
         // window, or the requested sheet, to a file and quits (for UI checks).
         let arguments = CommandLine.arguments
+        // `--notice <text>` shows a notice under the toolbar, to check how notices look.
+        if let index = arguments.firstIndex(of: "--notice"), index + 1 < arguments.count {
+            AppModel.shared.message = arguments[index + 1]
+        }
+        // Without `--snapshot`, `--show settings|overlay|unlock` just opens that sheet, to check it live.
+        if !arguments.contains("--snapshot"), let index = arguments.firstIndex(of: "--show"), index + 1 < arguments.count {
+            let sheet = arguments[index + 1]
+            DispatchQueue.main.async {
+                AppModel.shared.showingUnlockPrompt = sheet == "unlock"
+                AppModel.shared.showingSettings = sheet == "settings" || sheet == "overlay"
+                AppModel.shared.settingsTab = sheet == "overlay" ? 1 : 0
+            }
+        }
         if let index = arguments.firstIndex(of: "--snapshot"), index + 1 < arguments.count {
             let sheet = arguments.firstIndex(of: "--show").flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
             // `--show system` renders just the System section, which sits below the fold in the window.

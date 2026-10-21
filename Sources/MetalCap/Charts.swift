@@ -185,7 +185,7 @@ struct MetricBarChart: View {
     }
 }
 
-extension FramePoint: @retroactive Identifiable {
+extension FramePoint: Identifiable {
     public var id: Int { index }
 }
 

@@ -46,8 +46,9 @@ struct CaptureDetailView: View {
                 .frame(minHeight: geometry.size.height, alignment: .top)
               }
             }
-            // Content must not scroll up under the transparent toolbar.
-            .clipped()
+            // Before Liquid Glass, content must not scroll up under the transparent toolbar;
+            // macOS 26 fades it out under its glass toolbar instead.
+            .modifier(LegacyToolbarClip())
         } else {
             ContentUnavailableView(tr("Przechwycenie nie zawiera klatek", "The capture contains no frames"), systemImage: "exclamationmark.triangle")
         }
@@ -147,5 +148,11 @@ struct MetricTile: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct LegacyToolbarClip: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) { content } else { content.clipped() }
     }
 }

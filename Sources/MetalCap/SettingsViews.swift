@@ -16,15 +16,22 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            TabView(selection: $model.settingsTab) {
-                GeneralSettingsView()
-                    .padding(16)
-                    .tabItem { Text(tr("Ogólne", "General")) }
-                    .tag(0)
-                OverlaySettingsView()
-                    .padding(16)
-                    .tabItem { Text(tr("Nakładka HUD", "HUD overlay")) }
-                    .tag(1)
+            // A segmented picker over a box rather than a TabView: with the macOS 26+ look,
+            // a TabView in a sheet collapses its tabs into one truncated button.
+            Picker(tr("Ustawienia", "Settings"), selection: $model.settingsTab) {
+                Text(tr("Ogólne", "General")).tag(0)
+                Text(tr("Nakładka HUD", "HUD overlay")).tag(1)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .frame(maxWidth: .infinity)
+            GroupBox {
+                Group {
+                    if model.settingsTab == 1 { OverlaySettingsView() } else { GeneralSettingsView() }
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             // The version sits centred, the Done button at the right.
             ZStack {

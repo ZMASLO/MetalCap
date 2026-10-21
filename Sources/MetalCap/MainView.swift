@@ -50,32 +50,7 @@ struct MainView: View {
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 240)
         } detail: {
-            VStack(spacing: 0) {
-                if model.frameDataRedacted {
-                    HStack {
-                        Label(model.logUnlocked
-                              ? tr("Log nadal ukrywa czasy klatek tej gry. Uruchom ją ponownie i odczekaj chwilę; jeśli to nie pomoże, profil nie działa na tej wersji macOS.",
-                                   "The log still hides this game's frame times. Restart the game and wait a moment; if that does not help, the profile does not work on this macOS version.")
-                              : tr("macOS ukrywa czasy klatek tej gry, więc pomiar będzie pusty.",
-                                   "macOS hides this game's frame times, so a capture would be empty."),
-                              systemImage: "eye.slash")
-                        Spacer()
-                        if !model.logUnlocked {
-                            Button(tr("Odblokuj…", "Unlock…")) { model.showingUnlockPrompt = true }
-                        }
-                    }
-                    .padding(10)
-                    .background(.quaternary)
-                }
-                if let message = model.message {
-                    HStack {
-                        Label(message, systemImage: "info.circle")
-                        Spacer()
-                        Button("OK") { model.message = nil }
-                    }
-                    .padding(10)
-                    .background(.quaternary)
-                }
+            Group {
                 if let capture = model.captures.first(where: { $0.id == model.selection }) {
                     CaptureDetailView(capture: capture)
                 } else {
@@ -84,44 +59,159 @@ struct MainView: View {
                         systemImage: "speedometer",
                         description: Text(tr("Włącz Metal HUD, uruchom grę i naciśnij \(model.hotKey.display), żeby rozpocząć i zakończyć pomiar.",
                                              "Turn on Metal HUD, start a game and press \(model.hotKey.display) to begin and end a capture.")))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            // Notices sit right under the toolbar and push the content down by their own height.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 8) {
+                    if model.frameDataRedacted {
+                        NoticeView(systemImage: "eye.slash", text: model.logUnlocked
+                              ? tr("Log nadal ukrywa czasy klatek tej gry. Uruchom ją ponownie i odczekaj chwilę; jeśli to nie pomoże, profil nie działa na tej wersji macOS.",
+                                   "The log still hides this game's frame times. Restart the game and wait a moment; if that does not help, the profile does not work on this macOS version.")
+                              : tr("macOS ukrywa czasy klatek tej gry, więc pomiar będzie pusty.",
+                                   "macOS hides this game's frame times, so a capture would be empty.")) {
+                            if !model.logUnlocked {
+                                Button(tr("Odblokuj…", "Unlock…")) { model.showingUnlockPrompt = true }
+                            }
+                        }
+                    }
+                    if let message = model.message {
+                        NoticeView(systemImage: "info.circle", text: message) {
+                            Button("OK") { model.message = nil }
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, model.frameDataRedacted || model.message != nil ? 8 : 0)
+                .padding(.bottom, model.frameDataRedacted || model.message != nil ? 4 : 0)
+            }
         }
-        // The toolbar stays transparent: an opaque one overhangs the sidebar edge by a few points.
-        .toolbarBackground(.hidden, for: .windowToolbar)
+        .legacyTransparentToolbar()
         .navigationSubtitle(model.activeProcess.map { tr("Wykryto: \($0)", "Detected: \($0)") }
                             ?? tr("Nie wykryto gry", "No game detected"))
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 6) {
-                    Text("Metal HUD")
-                    Toggle("Metal HUD", isOn: Binding(get: { model.hudEnabled }, set: model.setHUDEnabled))
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .labelsHidden()
-                }
-                .padding(.horizontal, 6)
-                .help(tr("Włącza Metal HUD i logowanie klatek dla aplikacji uruchomionych od tej chwili",
-                         "Turns on Metal HUD and frame logging for apps launched from now on"))
-            }
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button(tr("Uruchom grę…", "Launch game…"), systemImage: "play.fill") { model.launchGame() }
-                    .labelStyle(.titleAndIcon)
-                    .help(tr("Uruchamia grę z Metal HUD i czyta czasy klatek bezpośrednio z niej",
-                             "Starts a game with Metal HUD and reads frame times directly from it"))
-                Button(model.isRecording ? tr("Zatrzymaj", "Stop") : tr("Nagrywaj", "Record"),
-                       systemImage: model.isRecording ? "stop.circle.fill" : "record.circle") {
-                    model.toggleCapture()
-                }
-                .labelStyle(.titleAndIcon)
-                .disabled(model.isFinishing)
-                .help(tr("Start/stop przechwytywania", "Start/stop capture") + " (\(model.hotKey.display))")
-                Button(tr("Ustawienia", "Settings"), systemImage: "gearshape") { model.showingSettings = true }
-                    .help(tr("Ustawienia", "Settings"))
-            }
-        }
+        .modifier(MainToolbar())
         .sheet(isPresented: $model.showingSettings) { SettingsView().id(model.language) }
         .sheet(isPresented: $model.showingUnlockPrompt) { UnlockPromptView() }
         .sheet(item: $model.renaming) { RenameView(capture: $0) }
+    }
+}
+
+/// A notice under the toolbar: an icon, a message and an optional action.
+private struct NoticeView<Action: View>: View {
+    let systemImage: String
+    let text: String
+    @ViewBuilder let action: () -> Action
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Label(text, systemImage: systemImage)
+            Spacer(minLength: 0)
+            action()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .noticeBackground()
+    }
+}
+
+private extension View {
+    /// Glass on macOS 26 and later, a plain rounded card before.
+    @ViewBuilder func noticeBackground() -> some View {
+        if #available(macOS 26, *) {
+            glassEffect(.regular, in: .rect(cornerRadius: 12))
+        } else {
+            background(.quaternary, in: .rect(cornerRadius: 12))
+        }
+    }
+
+    /// Before Liquid Glass an opaque toolbar overhangs the sidebar edge by a few points, so it stays
+    /// transparent there; macOS 26 draws its own glass toolbar with a scroll edge effect.
+    @ViewBuilder func legacyTransparentToolbar() -> some View {
+        if #available(macOS 26, *) {
+            self
+        } else {
+            toolbarBackground(.hidden, for: .windowToolbar)
+        }
+    }
+}
+
+/// Metal HUD switch, launch and record buttons, settings. On macOS 26 and later each part gets its own
+/// glass capsule; a spacer only takes effect in an availability-checked toolbar of its own.
+private struct MainToolbar: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content.toolbar {
+                // Its own capsule with room around the label, instead of the shared one.
+                ToolbarItem(placement: .primaryAction) {
+                    HUDSwitch()
+                        .padding(.horizontal, 6)
+                        .frame(height: 36)
+                        .glassEffect(.regular, in: .capsule)
+                }
+                .sharedBackgroundVisibility(.hidden)
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+                ToolbarItemGroup(placement: .primaryAction) { CaptureButtons() }
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+                ToolbarItem(placement: .primaryAction) {
+                    SettingsButton()
+                        .frame(width: 36, height: 36)
+                        .glassEffect(.regular.interactive(), in: .circle)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
+        } else {
+            content.toolbar {
+                ToolbarItem(placement: .primaryAction) { HUDSwitch() }
+                ToolbarItemGroup(placement: .primaryAction) {
+                    CaptureButtons()
+                    SettingsButton()
+                }
+            }
+        }
+    }
+}
+
+private struct HUDSwitch: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("Metal HUD")
+            Toggle("Metal HUD", isOn: Binding(get: { model.hudEnabled }, set: model.setHUDEnabled))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .labelsHidden()
+        }
+        .padding(.horizontal, 10)
+        .help(tr("Włącza Metal HUD i logowanie klatek dla aplikacji uruchomionych od tej chwili",
+                 "Turns on Metal HUD and frame logging for apps launched from now on"))
+    }
+}
+
+private struct CaptureButtons: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Button(tr("Uruchom grę…", "Launch game…"), systemImage: "play.fill") { model.launchGame() }
+            .labelStyle(.titleAndIcon)
+            .help(tr("Uruchamia grę z Metal HUD i czyta czasy klatek bezpośrednio z niej",
+                     "Starts a game with Metal HUD and reads frame times directly from it"))
+        Button(model.isRecording ? tr("Zatrzymaj", "Stop") : tr("Nagrywaj", "Record"),
+               systemImage: model.isRecording ? "stop.circle.fill" : "record.circle") {
+            model.toggleCapture()
+        }
+        .labelStyle(.titleAndIcon)
+        .disabled(model.isFinishing)
+        .help(tr("Start/stop przechwytywania", "Start/stop capture") + " (\(model.hotKey.display))")
+    }
+}
+
+private struct SettingsButton: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Button(tr("Ustawienia", "Settings"), systemImage: "gearshape") { model.showingSettings = true }
+            .help(tr("Ustawienia", "Settings"))
     }
 }
