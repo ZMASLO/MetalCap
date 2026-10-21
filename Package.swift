@@ -2,10 +2,16 @@
 import Foundation
 import PackageDescription
 
-// With only the Command Line Tools installed, the test build intermittently fails to locate the
-// Swift Testing macro plugin; naming its folder makes it reliable. Xcode (as on CI) needs nothing.
-let testingPluginFolder = "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing"
-let testSettings: [SwiftSetting] = FileManager.default.fileExists(atPath: testingPluginFolder)
+// Building with the Command Line Tools, the test build intermittently fails to locate the Swift
+// Testing macro plugin; naming its folder makes it reliable. Only for that toolchain: with Xcode
+// selected (as on CI) the folder may still exist but belongs to a different compiler.
+let commandLineTools = "/Library/Developer/CommandLineTools"
+let selectedDeveloperDir = ProcessInfo.processInfo.environment["DEVELOPER_DIR"]
+    ?? (try? FileManager.default.destinationOfSymbolicLink(atPath: "/var/db/xcode_select_link"))
+let testingPluginFolder = commandLineTools + "/usr/lib/swift/host/plugins/testing"
+// No selection at all means the default, the Command Line Tools.
+let usesCommandLineTools = selectedDeveloperDir.map { $0.hasPrefix(commandLineTools) } ?? true
+let testSettings: [SwiftSetting] = usesCommandLineTools && FileManager.default.fileExists(atPath: testingPluginFolder)
     ? [.unsafeFlags(["-plugin-path", testingPluginFolder])]
     : []
 
