@@ -15,6 +15,7 @@ mkdir -p "$APP/Contents/MacOS"
 # Empty localization folders make AppKit show its own menus and panels in these languages.
 mkdir -p "$APP/Contents/Resources/en.lproj" "$APP/Contents/Resources/pl.lproj"
 cp .build/release/MetalCap "$APP/Contents/MacOS/MetalCap"
+Scripts/stamp-sdk.sh "$APP/Contents/MacOS/MetalCap"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<EOF
