@@ -16,7 +16,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var isRecording = false
     @Published private(set) var isFinishing = false
     @Published private(set) var captures: [Capture] = []
-    @Published var selection: Capture.ID?
+    /// Selected captures; Shift and Command extend it. Details show when exactly one is selected.
+    @Published var selection: Set<Capture.ID> = []
     /// Process currently emitting HUD lines, if any.
     @Published private(set) var activeProcess: String?
     /// The unified log delivers HUD lines without frame data.
@@ -127,7 +128,7 @@ final class AppModel: ObservableObject {
                 // A capture finished while loading is already in the list; keep it first.
                 let known = Set(self.captures.map(\.id))
                 self.captures += stored.filter { !known.contains($0.id) }
-                if self.selection == nil { self.selection = self.captures.first?.id }
+                if self.selection.isEmpty, let first = self.captures.first { self.selection = [first.id] }
             }
         }
         Task.detached(priority: .utility) {
@@ -338,7 +339,7 @@ final class AppModel: ObservableObject {
                 + error.localizedDescription
         }
         captures.insert(capture, at: 0)
-        selection = capture.id
+        selection = [capture.id]
     }
 
     /// Names the user asked to reuse for every capture of a process, keyed by process name.
@@ -418,10 +419,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func delete(_ id: Capture.ID) {
-        try? store.delete(id)
-        CaptureCache.shared.forget(id)
-        captures.removeAll { $0.id == id }
-        if selection == id { selection = captures.first?.id }
+    func delete(_ ids: Set<Capture.ID>) {
+        for id in ids {
+            try? store.delete(id)
+            CaptureCache.shared.forget(id)
+        }
+        captures.removeAll { ids.contains($0.id) }
+        selection.subtract(ids)
+        if selection.isEmpty, let first = captures.first { selection = [first.id] }
     }
 }

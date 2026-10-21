@@ -5,6 +5,8 @@ struct MainView: View {
     @EnvironmentObject private var model: AppModel
     @AppStorage("sortKey") private var sortKey = CaptureSortKey.date
     @AppStorage("sortAscending") private var sortAscending = false
+    /// Captures waiting for the user to confirm their deletion.
+    @ViewState private var pendingDeletion: Set<Capture.ID> = []
 
     var body: some View {
         NavigationSplitView {
@@ -22,11 +24,18 @@ struct MainView: View {
                         Text(comment).font(.caption).lineLimit(2)
                     }
                 }
-                .contextMenu {
+            }
+            // Acts on the right-clicked row, or on the whole selection when that row is part of it.
+            .contextMenu(forSelectionType: Capture.ID.self) { ids in
+                if ids.count == 1, let capture = model.captures.first(where: { ids.contains($0.id) }) {
                     Button(tr("Zmień nazwę…", "Rename…")) { model.renaming = capture }
-                    Button(tr("Usuń", "Delete"), role: .destructive) { model.delete(capture.id) }
+                }
+                if !ids.isEmpty {
+                    Button(ids.count == 1 ? tr("Usuń", "Delete") : tr("Usuń zaznaczone (\(ids.count))", "Delete selected (\(ids.count))"),
+                           role: .destructive) { requestDeletion(ids) }
                 }
             }
+            .onDeleteCommand { requestDeletion(model.selection) }
             .safeAreaInset(edge: .top, spacing: 0) {
                 HStack(spacing: 6) {
                     Picker(tr("Sortuj według", "Sort by"), selection: $sortKey) {
@@ -51,7 +60,17 @@ struct MainView: View {
             .navigationSplitViewColumnWidth(min: 200, ideal: 240)
         } detail: {
             Group {
-                if let capture = model.captures.first(where: { $0.id == model.selection }) {
+                if model.selection.count > 1 {
+                    ContentUnavailableView {
+                        Label(tr("Zaznaczone wyniki: \(model.selection.count)", "Selected results: \(model.selection.count)"),
+                              systemImage: "square.stack")
+                    } description: {
+                        Text(tr("Shift zaznacza zakres, Cmd pojedyncze wyniki.", "Shift selects a range, Command single results."))
+                    } actions: {
+                        Button(tr("Usuń zaznaczone…", "Delete selected…"), role: .destructive) { requestDeletion(model.selection) }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let capture = model.captures.first(where: { model.selection.contains($0.id) }) {
                     CaptureDetailView(capture: capture)
                 } else {
                     ContentUnavailableView(
@@ -94,6 +113,20 @@ struct MainView: View {
         .sheet(isPresented: $model.showingSettings) { SettingsView().id(model.language) }
         .sheet(isPresented: $model.showingUnlockPrompt) { UnlockPromptView() }
         .sheet(item: $model.renaming) { RenameView(capture: $0) }
+        .confirmationDialog(tr("Usunąć zaznaczone wyniki (\(pendingDeletion.count))?", "Delete the selected results (\(pendingDeletion.count))?"),
+                            isPresented: Binding(get: { !pendingDeletion.isEmpty }, set: { if !$0 { pendingDeletion = [] } })) {
+            Button(tr("Usuń", "Delete"), role: .destructive) {
+                model.delete(pendingDeletion)
+                pendingDeletion = []
+            }
+        } message: {
+            Text(tr("Tej operacji nie można cofnąć.", "This cannot be undone."))
+        }
+    }
+
+    /// One capture goes at once, as before; several ask first.
+    private func requestDeletion(_ ids: Set<Capture.ID>) {
+        if ids.count == 1 { model.delete(ids) } else if ids.count > 1 { pendingDeletion = ids }
     }
 }
 
