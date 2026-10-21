@@ -1,3 +1,4 @@
+import AppKit
 import MetalCapCore
 import SwiftUI
 
@@ -119,6 +120,21 @@ struct CommentField: View {
                 if !Task.isCancelled { save() }
             }
             .onDisappear(perform: save)
+            .onAppear(perform: CommentField.dropLaunchFocus)
+    }
+
+    private static var appeared = false
+
+    /// The window gives its first text field the focus when it opens; the comment should only be
+    /// edited after a click.
+    private static func dropLaunchFocus() {
+        guard !appeared else { return }
+        appeared = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            for window in NSApp.windows where (window.firstResponder as? NSTextView)?.isFieldEditor == true {
+                window.makeFirstResponder(nil)
+            }
+        }
     }
 
     private func save() {

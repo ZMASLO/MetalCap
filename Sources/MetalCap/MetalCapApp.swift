@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Needed when run as a bare executable (`swift run`) rather than from the .app bundle.
         NSApp.setActivationPolicy(.regular)
+        Self.endEditingOnOutsideClicks()
 
         // `--snapshot <png> [--size WxH] [--show settings|overlay|unlock|rename|system] [--lang pl|en] [--scroll N] [--pointer seconds]` renders the main
         // window, or the requested sheet, to a file and quits (for UI checks).
@@ -75,6 +76,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     exit(0)
                 }
             }
+        }
+    }
+
+    /// A click anywhere outside the text field being edited in the main window ends the editing,
+    /// as in most Mac apps; by default only another focusable control takes the focus away.
+    private static func endEditingOnOutsideClicks() {
+        NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            if let window = event.window, window.sheetParent == nil,
+               let editor = window.firstResponder as? NSTextView, editor.isFieldEditor,
+               let field = editor.delegate as? NSView,
+               !field.bounds.contains(field.convert(event.locationInWindow, from: nil)) {
+                window.makeFirstResponder(nil)
+            }
+            return event
         }
     }
 
