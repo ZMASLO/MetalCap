@@ -6,6 +6,10 @@
 
 Frame time capture for games on macOS - the macOS counterpart of CapFrameX.
 
+![Capture result: metrics, FPS bars and system summary](docs/main-en.png)
+
+![Frame time chart and system metrics over the capture](docs/charts-en.png)
+
 ## Where the measurements come from
 
 Frame data comes from the Metal Performance HUD, Apple's official performance tool built into macOS. MetalCap does not measure frames itself - it collects what the HUD reports, calculates the metrics and presents them.

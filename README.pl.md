@@ -6,6 +6,10 @@
 
 Pomiar czasów klatek w grach na macOS - odpowiednik CapFrameX dla Maca.
 
+![Wynik pomiaru: metryki, słupki FPS i podsumowanie systemu](docs/main-pl.png)
+
+![Wykres czasu klatki i metryki systemowe w czasie pomiaru](docs/charts-pl.png)
+
 ## Skąd pochodzą pomiary
 
 Dane o klatkach pochodzą z Metal Performance HUD, oficjalnego narzędzia Apple wbudowanego w macOS. MetalCap nie mierzy klatek sam - zbiera to, co raportuje HUD, liczy z tego metryki i je pokazuje.
